@@ -1,0 +1,30 @@
+{
+  "modules": [
+    {
+      "module_title": "Contenido",
+      "module_objective": "Construir una estructura minima de syllabus para probar la creacion directa de programas en estado syllabus-processed.",
+      "module_objectives": [
+        "Identificar la estructura base de un programa.",
+        "Validar la carga de un syllabus desde un fichero JSON.",
+        "Comprobar la creacion del programa desde hawkings."
+      ],
+      "module_duration_hours": 32,
+      "module_outline": [
+        "Contenido"
+      ],
+      "didactic_units": [
+        {
+          "unit_title": "Contenido",
+          "unit_duration_hours": 10,
+          "topics": [
+            {
+              "topic_title": "contenido",
+              "topic_description": "Elemento unico de prueba para validar un syllabus minimo cargado desde fichero.",
+              "estimated_hours": 10
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

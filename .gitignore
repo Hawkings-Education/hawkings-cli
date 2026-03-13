@@ -1,0 +1,7 @@
+/bin/
+/dist/
+hawkings
+hawkings-cli
+hawkings-linux
+hawkings-linux-arm64
+.DS_Store
