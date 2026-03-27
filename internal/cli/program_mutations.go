@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 
+	"hawkings-cli/internal/api"
 	"hawkings-cli/internal/output"
 
 	"github.com/spf13/cobra"
@@ -263,6 +264,156 @@ func newProgramSetSpacesCommand(opts *rootOptions) *cobra.Command {
 	command.Flags().BoolVar(&dryRun, "dry-run", false, "Muestra el payload sin enviar peticiones")
 
 	return command
+}
+
+func newProgramSetCoursesCommand(opts *rootOptions) *cobra.Command {
+	var courseIDs []int
+	var dryRun bool
+
+	command := &cobra.Command{
+		Use:   "set-courses <program-id>",
+		Short: "Reemplaza la seleccion de courses asociados a un programa",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rt, err := buildRuntime(opts, true)
+			if err != nil {
+				return err
+			}
+			if len(courseIDs) == 0 {
+				return fmt.Errorf("at least one --course is required")
+			}
+
+			payload := map[string]any{"selected": courseIDs}
+			if dryRun {
+				return output.PrintJSON(map[string]any{
+					"action":     "program set-courses",
+					"program_id": args[0],
+					"payload":    payload,
+				})
+			}
+
+			ctx, cancel := commandContext(rt)
+			defer cancel()
+
+			courses, err := rt.Client.UpdateProgramCourses(ctx, args[0], payload)
+			if err != nil {
+				return err
+			}
+
+			return printProgramCoursesMutationResult(rt.Format, courses)
+		},
+	}
+
+	command.Flags().IntSliceVar(&courseIDs, "course", nil, "IDs de courses que deben quedar asociados")
+	command.Flags().BoolVar(&dryRun, "dry-run", false, "Muestra el payload sin enviar peticiones")
+
+	return command
+}
+
+func newProgramAddCourseCommand(opts *rootOptions) *cobra.Command {
+	var courseIDs []int
+	var dryRun bool
+
+	command := &cobra.Command{
+		Use:   "add-course <program-id>",
+		Short: "Anade uno o varios courses a un programa sin tocar los ya asociados",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rt, err := buildRuntime(opts, true)
+			if err != nil {
+				return err
+			}
+			if len(courseIDs) == 0 {
+				return fmt.Errorf("at least one --course is required")
+			}
+
+			payload := map[string]any{"add": courseIDs}
+			if dryRun {
+				return output.PrintJSON(map[string]any{
+					"action":     "program add-course",
+					"program_id": args[0],
+					"payload":    payload,
+				})
+			}
+
+			ctx, cancel := commandContext(rt)
+			defer cancel()
+
+			courses, err := rt.Client.UpdateProgramCourses(ctx, args[0], payload)
+			if err != nil {
+				return err
+			}
+
+			return printProgramCoursesMutationResult(rt.Format, courses)
+		},
+	}
+
+	command.Flags().IntSliceVar(&courseIDs, "course", nil, "IDs de courses a anadir")
+	command.Flags().BoolVar(&dryRun, "dry-run", false, "Muestra el payload sin enviar peticiones")
+
+	return command
+}
+
+func newProgramRemoveCourseCommand(opts *rootOptions) *cobra.Command {
+	var courseIDs []int
+	var dryRun bool
+
+	command := &cobra.Command{
+		Use:   "remove-course <program-id>",
+		Short: "Quita uno o varios courses de un programa sin tocar los demas",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rt, err := buildRuntime(opts, true)
+			if err != nil {
+				return err
+			}
+			if len(courseIDs) == 0 {
+				return fmt.Errorf("at least one --course is required")
+			}
+
+			payload := map[string]any{"remove": courseIDs}
+			if dryRun {
+				return output.PrintJSON(map[string]any{
+					"action":     "program remove-course",
+					"program_id": args[0],
+					"payload":    payload,
+				})
+			}
+
+			ctx, cancel := commandContext(rt)
+			defer cancel()
+
+			courses, err := rt.Client.UpdateProgramCourses(ctx, args[0], payload)
+			if err != nil {
+				return err
+			}
+
+			return printProgramCoursesMutationResult(rt.Format, courses)
+		},
+	}
+
+	command.Flags().IntSliceVar(&courseIDs, "course", nil, "IDs de courses a quitar")
+	command.Flags().BoolVar(&dryRun, "dry-run", false, "Muestra el payload sin enviar peticiones")
+
+	return command
+}
+
+func printProgramCoursesMutationResult(format output.Format, courses []api.CourseDetail) error {
+	if output.WantsJSON(format) {
+		return output.PrintJSON(courses)
+	}
+
+	rows := make([][]string, 0, len(courses))
+	for _, course := range courses {
+		rows = append(rows, []string{
+			intToString(course.ID),
+			valueOrDash(stringPtrValue(course.RemoteID)),
+			course.Name,
+			valueOrDash(stringPtrValue(course.Status)),
+		})
+	}
+
+	return output.PrintTable([]string{"ID", "Remote ID", "Name", "Status"}, rows)
 }
 
 func newProgramGenerateSyllabusCommand(opts *rootOptions) *cobra.Command {

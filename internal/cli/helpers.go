@@ -64,6 +64,17 @@ func valueOrDash(value string) string {
 	return value
 }
 
+func anyStringOrDash(value any) string {
+	switch v := value.(type) {
+	case string:
+		return valueOrDash(v)
+	case int:
+		return intToString(v)
+	default:
+		return "-"
+	}
+}
+
 func stringPtrValue(value *string) string {
 	if value == nil {
 		return ""
@@ -125,6 +136,24 @@ func anyInt(value any) int {
 		return int(v)
 	case float32:
 		return int(v)
+	default:
+		return 0
+	}
+}
+
+func anyResolvedValue(resolved bool, value any, fallback any) any {
+	if resolved {
+		return value
+	}
+	return fallback
+}
+
+func anyLen(value any) int {
+	switch v := value.(type) {
+	case []any:
+		return len(v)
+	case []map[string]any:
+		return len(v)
 	default:
 		return 0
 	}

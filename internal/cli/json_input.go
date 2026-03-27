@@ -51,6 +51,13 @@ func readJSONObject(opts jsonInputOptions) (map[string]any, error) {
 	return payload, nil
 }
 
+func readOptionalJSONObject(opts jsonInputOptions) (map[string]any, error) {
+	if opts.JSON == "" && opts.JSONFile == "" {
+		return nil, nil
+	}
+	return readJSONObject(opts)
+}
+
 func readJSONFile(path string) (any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

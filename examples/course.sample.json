@@ -1,0 +1,62 @@
+{
+  "name": "Curso de ejemplo sobre olivos",
+  "remote_id": "course-olivos-cli-sample",
+  "description": "Curso de ejemplo para probar /course/bulk desde hawkings.",
+  "language_id": 2,
+  "enabled": true,
+  "metadata": {
+    "level": "introductorio",
+    "domain": "agricultura"
+  },
+  "course_modules": [
+    {
+      "name": "Bienvenida al curso",
+      "type": "markdown",
+      "order": 1,
+      "empty": true,
+      "status": "empty"
+    }
+  ],
+  "course_sections": [
+    {
+      "name": "Fundamentos del olivar",
+      "order": 1,
+      "course_modules": [
+        {
+          "name": "Biologia del olivo",
+          "type": "markdown",
+          "order": 1,
+          "empty": true,
+          "status": "empty"
+        },
+        {
+          "name": "Tipos de cultivo",
+          "type": "markdown",
+          "order": 2,
+          "empty": true,
+          "status": "empty"
+        }
+      ]
+    },
+    {
+      "name": "Manejo y produccion",
+      "order": 2,
+      "course_modules": [
+        {
+          "name": "Poda basica",
+          "type": "markdown",
+          "order": 1,
+          "empty": true,
+          "status": "empty"
+        },
+        {
+          "name": "Plagas frecuentes",
+          "type": "markdown",
+          "order": 2,
+          "empty": true,
+          "status": "empty"
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"fmt"
+	"strings"
+
 	"hawkings-cli/internal/api"
 	"hawkings-cli/internal/output"
 
@@ -12,11 +15,136 @@ func newCourseCommand(opts *rootOptions) *cobra.Command {
 		Use:   "course",
 		Short: "Comandos sobre courses",
 	}
+	cmd.AddCommand(newCourseCreateCommand(opts))
 	cmd.AddCommand(newCourseGetCommand(opts))
 	cmd.AddCommand(newCourseSectionsCommand(opts))
 	cmd.AddCommand(newCourseModulesCommand(opts))
 	cmd.AddCommand(newCourseModuleStatusCommand(opts))
 	return cmd
+}
+
+func newCourseCreateCommand(opts *rootOptions) *cobra.Command {
+	var programID int
+	var input jsonInputOptions
+	var dryRun bool
+
+	command := &cobra.Command{
+		Use:   "create",
+		Short: "Crea o actualiza un course completo via /course/bulk",
+		Long: `
+Crea o actualiza un course completo, incluyendo sections, modules
+y, si el payload los trae, course_contents.
+
+Reglas del backend relevantes:
+- course_sections es obligatorio.
+- Un module markdown debe traer course_contents, salvo que lleve empty=true.
+- Si pasas --program, el CLI relaciona el course despues via POST /course-program/{id}/course.
+- /course/bulk es destructivo respecto al arbol enviado: borra sections/modules/contents
+  que queden fuera del payload en el ambito gestionado.
+- El backend puede responder 200 con errores parciales embebidos; el CLI los detecta y falla.
+`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rt, err := buildRuntime(opts, true)
+			if err != nil {
+				return err
+			}
+
+			payload, err := readJSONObject(input)
+			if err != nil {
+				return err
+			}
+
+			if err := validateCourseBulkPayload(payload); err != nil {
+				return err
+			}
+
+			if dryRun {
+				preview := map[string]any{
+					"action":  "course create",
+					"program": programID,
+					"payload": payload,
+					"notes": []string{
+						"dry-run no hace escrituras en la API",
+						"course_sections es obligatorio en /course/bulk",
+						"modules markdown requieren course_contents salvo que uses empty=true",
+						"el backend sincroniza el arbol: si omites sections/modules existentes, puede eliminarlos",
+					},
+				}
+				if programID != 0 {
+					preview["program_relation"] = map[string]any{
+						"endpoint": "/course-program/{program-id}/course",
+						"payload":  map[string]any{"add": []any{"<course-id-from-bulk-response>"}},
+					}
+				}
+				return output.PrintJSON(preview)
+			}
+
+			ctx, cancel := commandContext(rt)
+			defer cancel()
+
+			result, err := rt.Client.CreateCourseBulk(ctx, payload)
+			if err != nil {
+				return err
+			}
+			if errs := collectBulkErrors(result); len(errs) > 0 {
+				return fmt.Errorf("course bulk returned partial errors:\n- %s", strings.Join(errs, "\n- "))
+			}
+
+			var relatedCourses []api.CourseDetail
+			if programID != 0 {
+				courseID := anyInt(result["id"])
+				if courseID == 0 {
+					return fmt.Errorf("course bulk succeeded but did not return a course id; cannot relate to program %d", programID)
+				}
+				relatedCourses, err = rt.Client.UpdateProgramCourses(ctx, intToString(programID), map[string]any{
+					"add": []int{courseID},
+				})
+				if err != nil {
+					return err
+				}
+			}
+
+			if output.WantsJSON(rt.Format) {
+				response := map[string]any{
+					"action": "course create",
+					"result": result,
+				}
+				if programID != 0 {
+					response["program_relation"] = map[string]any{
+						"program_id": programID,
+						"action":     "add",
+						"courses":    relatedCourses,
+					}
+				}
+				return output.PrintJSON(response)
+			}
+
+			rows := [][]string{
+				{"Course ID", intToString(anyInt(result["id"]))},
+				{"Program ID", anyStringOrDash(programID)},
+				{"Name", mapString(result, "name")},
+				{"Remote ID", valueOrDash(mapString(result, "remote_id"))},
+				{"Sections", intToString(anyLen(result["course_sections"]))},
+				{"Course-level modules", intToString(anyLen(result["course_modules"]))},
+			}
+			if err := output.PrintTable([]string{"Field", "Value"}, rows); err != nil {
+				return err
+			}
+			if programID != 0 {
+				writeLine("")
+				writeLine("Relacionado al program %d via POST /course-program/%d/course (add).", programID, programID)
+			}
+			writeLine("")
+			writeLine("Nota: usa `course get %d` o `course modules %d` para inspeccionar la estructura creada.", anyInt(result["id"]), anyInt(result["id"]))
+			return nil
+		},
+	}
+
+	command.Flags().IntVar(&programID, "program", 0, "ID del program a asociar despues via /course-program/{id}/course")
+	addJSONInputFlags(command, &input)
+	command.Flags().BoolVar(&dryRun, "dry-run", false, "Muestra el payload final sin enviar peticiones")
+
+	return command
 }
 
 func newCourseGetCommand(opts *rootOptions) *cobra.Command {
@@ -248,6 +376,47 @@ func newCourseModuleStatusCommand(opts *rootOptions) *cobra.Command {
 		},
 	}
 	return command
+}
+
+func validateCourseBulkPayload(payload map[string]any) error {
+	if payload == nil {
+		return fmt.Errorf("course payload is required")
+	}
+
+	sections, ok := payload["course_sections"]
+	if !ok {
+		return fmt.Errorf("course payload must include course_sections for /course/bulk")
+	}
+	if _, ok := sections.([]any); !ok {
+		return fmt.Errorf("course_sections must be a JSON array")
+	}
+
+	return nil
+}
+
+func collectBulkErrors(result map[string]any) []string {
+	errors := make([]string, 0)
+	collectBulkErrorsInto(&errors, "result", result)
+	return errors
+}
+
+func collectBulkErrorsInto(errors *[]string, path string, value any) {
+	switch typed := value.(type) {
+	case map[string]any:
+		if message := strings.TrimSpace(mapString(typed, "error")); message != "" {
+			*errors = append(*errors, path+": "+message)
+		}
+		for key, nested := range typed {
+			if key == "error" {
+				continue
+			}
+			collectBulkErrorsInto(errors, path+"."+key, nested)
+		}
+	case []any:
+		for index, nested := range typed {
+			collectBulkErrorsInto(errors, fmt.Sprintf("%s[%d]", path, index), nested)
+		}
+	}
 }
 
 func flattenCourseModules(course api.CourseDetail) []api.CourseModule {

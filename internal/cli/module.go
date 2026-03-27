@@ -21,6 +21,7 @@ func newModuleCommand(opts *rootOptions) *cobra.Command {
 	}
 	cmd.AddCommand(newModuleGetCommand(opts))
 	cmd.AddCommand(newModuleContentCommand(opts))
+	cmd.AddCommand(newModuleCreateCommand(opts))
 	cmd.AddCommand(newModuleSetContentCommand(opts))
 	cmd.AddCommand(newModulePatchCommand(opts))
 	cmd.AddCommand(newModuleGenerateContentCommand(opts))
@@ -275,6 +276,195 @@ func newModuleContentCommand(opts *rootOptions) *cobra.Command {
 	return command
 }
 
+func newModuleCreateCommand(opts *rootOptions) *cobra.Command {
+	var moduleType string
+	var name string
+	var url string
+	var status string
+	var courseID int
+	var sectionID int
+	var order int
+	var position string
+	var optional bool
+	var evaluable bool
+	var remoteID string
+	var remoteUpdatedAt string
+	var metadataInput jsonInputOptions
+	var dryRun bool
+
+	command := &cobra.Command{
+		Use:   "create",
+		Short: "Crea un module a nivel course o section con calculo automatico de order si no se indica",
+		Long: strings.TrimSpace(`
+Crea un module nuevo via POST /course-module.
+
+Reglas:
+- Usa --course-id para modulos a nivel curso.
+- Usa --section-id para modulos dentro de una section; el CLI resuelve automaticamente el course_id.
+- Si no pasas --order, el CLI calcula max(order)+1 dentro del ambito elegido.
+- Si pasas --order y ya existe, el backend desplaza los modulos siguientes.
+`),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rt, err := buildRuntime(opts, true)
+			if err != nil {
+				return err
+			}
+
+			if strings.TrimSpace(name) == "" {
+				return fmt.Errorf("--name is required")
+			}
+			moduleType = strings.TrimSpace(moduleType)
+			if moduleType == "" {
+				return fmt.Errorf("--type is required")
+			}
+			if courseID == 0 && sectionID == 0 {
+				return fmt.Errorf("use --course-id or --section-id")
+			}
+			if courseID != 0 && sectionID != 0 {
+				return fmt.Errorf("use either --course-id or --section-id, not both")
+			}
+
+			metadata, err := readOptionalJSONObject(metadataInput)
+			if err != nil {
+				return err
+			}
+
+			resolvedCourseID := courseID
+			resolvedOrder := order
+			scope := "course"
+			parentID := courseID
+
+			payload := map[string]any{
+				"name":      strings.TrimSpace(name),
+				"type":      moduleType,
+				"url":       strings.TrimSpace(url),
+				"status":    defaultString(status, "empty"),
+				"order":     resolvedOrder,
+				"optional":  optional,
+				"evaluable": evaluable,
+				"course_id": resolvedCourseID,
+			}
+			if sectionID != 0 {
+				payload["course_section_id"] = sectionID
+			}
+			if strings.TrimSpace(position) != "" {
+				payload["position"] = strings.TrimSpace(position)
+			}
+			if strings.TrimSpace(remoteID) != "" {
+				payload["remote_id"] = strings.TrimSpace(remoteID)
+			}
+			if strings.TrimSpace(remoteUpdatedAt) != "" {
+				payload["remote_updated_at"] = strings.TrimSpace(remoteUpdatedAt)
+			}
+			if metadata != nil {
+				payload["metadata"] = metadata
+			}
+
+			if dryRun {
+				if sectionID != 0 {
+					scope = "section"
+					parentID = sectionID
+					delete(payload, "course_id")
+					payload["course_section_id"] = sectionID
+				}
+				return output.PrintJSON(map[string]any{
+					"action":    "module create",
+					"scope":     scope,
+					"parent_id": parentID,
+					"resolved": map[string]any{
+						"course_id": anyResolvedValue(scope == "course", resolvedCourseID, "from section at runtime"),
+						"order":     anyResolvedValue(resolvedOrder != 0, resolvedOrder, "auto (next order in selected scope)"),
+					},
+					"payload": payload,
+					"notes": []string{
+						"dry-run no hace lecturas ni escrituras en la API",
+						"si order no se indica, el CLI calcula max(order)+1 en el ambito elegido durante la ejecucion real",
+						"si el backend recibe un order ya ocupado, desplaza los modulos siguientes",
+					},
+				})
+			}
+
+			ctx, cancel := commandContext(rt)
+			defer cancel()
+
+			if sectionID != 0 {
+				scope = "section"
+				parentID = sectionID
+				section, err := rt.Client.GetCourseSection(ctx, intToString(sectionID), []string{"courseModules", "course"})
+				if err != nil {
+					return err
+				}
+				resolvedCourseID = anyInt(section.Course["id"])
+				if resolvedCourseID == 0 {
+					return fmt.Errorf("section %d does not expose course.id; cannot infer --course-id", sectionID)
+				}
+				if resolvedOrder == 0 {
+					resolvedOrder = nextModuleOrder(section.CourseModules)
+				}
+			} else if resolvedOrder == 0 {
+				course, err := rt.Client.GetCourse(ctx, intToString(courseID), []string{"courseModules"})
+				if err != nil {
+					return err
+				}
+				resolvedOrder = nextModuleOrder(course.CourseModules)
+			}
+
+			payload["course_id"] = resolvedCourseID
+			payload["order"] = resolvedOrder
+
+			module, err := rt.Client.CreateCourseModule(ctx, payload)
+			if err != nil {
+				return err
+			}
+
+			if output.WantsJSON(rt.Format) {
+				return output.PrintJSON(map[string]any{
+					"action":        "module create",
+					"scope":         scope,
+					"parent_id":     parentID,
+					"resolved_order": resolvedOrder,
+					"module":        module,
+				})
+			}
+
+			rows := [][]string{
+				{"ID", intToString(module.ID)},
+				{"Name", module.Name},
+				{"Type", module.Type},
+				{"Status", stringPtrOrDash(module.Status)},
+				{"Order", intToString(module.Order)},
+				{"Scope", scope},
+				{"Parent ID", intToString(parentID)},
+				{"Course ID", intToString(resolvedCourseID)},
+			}
+			if err := output.PrintTable([]string{"Field", "Value"}, rows); err != nil {
+				return err
+			}
+			writeLine("")
+			writeLine("Nota: si luego quieres escribir markdown manual, usa `module set-content %d --file ...`.", module.ID)
+			return nil
+		},
+	}
+
+	command.Flags().StringVar(&name, "name", "", "Nombre visible del module")
+	command.Flags().StringVar(&moduleType, "type", "", "Tipo de module: markdown, activity, assignment o url")
+	command.Flags().StringVar(&url, "url", "", "URL del module cuando el tipo lo requiera")
+	command.Flags().StringVar(&status, "status", "empty", "Status inicial del module")
+	command.Flags().IntVar(&courseID, "course-id", 0, "ID del course para modulos a nivel curso")
+	command.Flags().IntVar(&sectionID, "section-id", 0, "ID de la section para modulos anidados; el CLI resuelve course_id")
+	command.Flags().IntVar(&order, "order", 0, "Posicion deseada; si se omite, el CLI calcula el siguiente order")
+	command.Flags().StringVar(&position, "position", "", "Posicion logica before|after si quieres persistirla en el recurso")
+	command.Flags().BoolVar(&optional, "optional", false, "Marca el module como opcional")
+	command.Flags().BoolVar(&evaluable, "evaluable", false, "Marca el module como evaluable")
+	command.Flags().StringVar(&remoteID, "remote-id", "", "remote_id opcional")
+	command.Flags().StringVar(&remoteUpdatedAt, "remote-updated-at", "", "Timestamp remoto en formato YYYY-MM-DD HH:MM:SS")
+	command.Flags().StringVar(&metadataInput.JSON, "metadata-json", "", "Objeto JSON inline para metadata")
+	command.Flags().StringVar(&metadataInput.JSONFile, "metadata-file", "", "Ruta a un fichero JSON para metadata")
+	command.Flags().BoolVar(&dryRun, "dry-run", false, "Muestra el payload resuelto sin enviar peticiones")
+
+	return command
+}
+
 func newModuleSetContentCommand(opts *rootOptions) *cobra.Command {
 	var filePath string
 	var inlineContent string
@@ -479,6 +669,7 @@ Importante:
 	}
 
 	command.Flags().StringVar(&filePath, "file", "", "Ruta a un fichero de texto o markdown para cargar como contenido")
+	command.Flags().StringVar(&filePath, "content-file", "", "Alias explicito de --file para cargar contenido desde fichero")
 	command.Flags().StringVar(&inlineContent, "content", "", "Contenido inline para escribir directamente en el module")
 	command.Flags().StringVar(&name, "name", "", "Nombre del course-content; por defecto usa el del module")
 	command.Flags().StringVar(&mime, "mime", "", "Mime del course-content; por defecto text/markdown para .md")
@@ -495,8 +686,9 @@ func newModulePatchCommand(opts *rootOptions) *cobra.Command {
 	var dryRun bool
 
 	command := &cobra.Command{
-		Use:   "patch <module-id>",
-		Short: "Hace PATCH /only sobre un module con los campos enviados",
+		Use:     "patch <module-id>",
+		Aliases: []string{"update"},
+		Short:   "Hace PATCH /only sobre un module con los campos enviados",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rt, err := buildRuntime(opts, true)
@@ -736,4 +928,14 @@ func firstNonEmpty(values ...string) string {
 func previewText(value string, maxChars int) string {
 	preview, _, _ := truncateText(value, maxChars)
 	return preview
+}
+
+func nextModuleOrder(modules []api.CourseModule) int {
+	maxOrder := 0
+	for _, module := range modules {
+		if module.Order > maxOrder {
+			maxOrder = module.Order
+		}
+	}
+	return maxOrder + 1
 }

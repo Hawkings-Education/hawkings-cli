@@ -103,6 +103,7 @@ type CourseSection struct {
 	RemoteID      *string        `json:"remote_id"`
 	Metadata      map[string]any `json:"metadata"`
 	Enabled       bool           `json:"enabled"`
+	Course        map[string]any `json:"course"`
 	CourseModules []CourseModule `json:"course_modules"`
 }
 
@@ -378,6 +379,15 @@ func (c *Client) GetCourseModule(ctx context.Context, id string, with []string, 
 	return module, nil
 }
 
+func (c *Client) GetCourseSection(ctx context.Context, id string, with []string) (CourseSection, error) {
+	var section CourseSection
+	params := withValues(nil, with)
+	if err := c.getJSON(ctx, "/course-section/"+id, params, &section); err != nil {
+		return CourseSection{}, err
+	}
+	return section, nil
+}
+
 func (c *Client) GetCourseContent(ctx context.Context, id string, contents bool) (CourseContent, error) {
 	var content CourseContent
 	params := url.Values{}
@@ -398,9 +408,25 @@ func (c *Client) GetCourseModulesStatus(ctx context.Context, courseID string) (m
 	return statuses, nil
 }
 
+func (c *Client) CreateCourseBulk(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	var result map[string]any
+	if err := c.sendJSON(ctx, http.MethodPost, "/course/bulk", nil, payload, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (c *Client) UpdateCourseModuleOnly(ctx context.Context, id string, payload map[string]any) (CourseModule, error) {
 	var module CourseModule
 	if err := c.sendJSON(ctx, http.MethodPatch, "/course-module/"+id+"/only", nil, payload, &module); err != nil {
+		return CourseModule{}, err
+	}
+	return module, nil
+}
+
+func (c *Client) CreateCourseModule(ctx context.Context, payload map[string]any) (CourseModule, error) {
+	var module CourseModule
+	if err := c.sendJSON(ctx, http.MethodPost, "/course-module", nil, payload, &module); err != nil {
 		return CourseModule{}, err
 	}
 	return module, nil
@@ -497,6 +523,14 @@ func (c *Client) CreateProgramCoursesFromSyllabus(ctx context.Context, id string
 		return ProgramDetail{}, err
 	}
 	return program, nil
+}
+
+func (c *Client) UpdateProgramCourses(ctx context.Context, id string, payload map[string]any) ([]CourseDetail, error) {
+	var courses []CourseDetail
+	if err := c.sendJSON(ctx, http.MethodPost, "/course-program/"+id+"/course", nil, payload, &courses); err != nil {
+		return nil, err
+	}
+	return courses, nil
 }
 
 func (c *Client) DeleteProgram(ctx context.Context, id string) error {

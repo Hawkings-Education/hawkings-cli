@@ -98,7 +98,7 @@ func HierarchyCatalog() []HierarchyNode {
 									Name:        "module",
 									Cardinality: "0..n",
 									Summary:     "Unidad de contenido o actividad. Puede vivir a nivel course o section.",
-									Commands:    []string{"course modules", "module get", "module content"},
+									Commands:    []string{"course modules", "module create", "module get", "module content"},
 									Children: []HierarchyNode{
 										{
 											Name:        "content",
@@ -117,7 +117,7 @@ func HierarchyCatalog() []HierarchyNode {
 							Name:        "module",
 							Cardinality: "0..n",
 							Summary:     "Modules de primer nivel del course, fuera de sections.",
-							Commands:    []string{"course modules", "program tree", "module get", "module content"},
+							Commands:    []string{"course modules", "module create", "program tree", "module get", "module content"},
 						},
 					},
 				},
@@ -222,6 +222,9 @@ func EntitiesCatalog() []Entity {
 				"program update",
 				"program delete",
 				"program set-spaces",
+				"program set-courses",
+				"program add-course",
+				"program remove-course",
 				"program generate-syllabus",
 				"program create-courses",
 				"program list",
@@ -237,6 +240,7 @@ func EntitiesCatalog() []Entity {
 				"coursesSectionsModules incluye courses, course modules y section modules.",
 				"El listado usa courses_count para saber si hay courses sin expandirlos.",
 				"Al borrar un program, el backend solo borra en cascada los courses exclusivos de ese program.",
+				"La relacion program↔course tiene endpoint propio: /course-program/{id}/course.",
 			},
 		},
 		{
@@ -255,6 +259,7 @@ func EntitiesCatalog() []Entity {
 				"courseSectionsModulesContents",
 			},
 			Commands: []string{
+				"course create",
 				"course get",
 				"course sections",
 				"course modules",
@@ -265,6 +270,7 @@ func EntitiesCatalog() []Entity {
 			Notes: []string{
 				"GET /course/{id} sin with[] no devuelve el arbol completo.",
 				"Un course puede tener modules directos ademas de sections.",
+				"course create usa /course/bulk para crear el arbol y, si se le pasa --program, relaciona despues via /course-program/{id}/course.",
 			},
 		},
 		{
@@ -299,9 +305,11 @@ func EntitiesCatalog() []Entity {
 			},
 			Commands: []string{
 				"course modules",
+				"module create",
 				"module get",
 				"module content",
 				"module set-content",
+				"module update",
 				"module patch",
 				"module generate-content",
 				"module approve",
@@ -309,6 +317,7 @@ func EntitiesCatalog() []Entity {
 			Notes: []string{
 				"module get es ligero por defecto y solo lista content items.",
 				"module content hace la lectura de file.contents con truncado por defecto.",
+				"module create calcula order automaticamente cuando no se le pasa.",
 				"module set-content permite escribir markdown manual sin pasar por el generador de contenido del modulo.",
 			},
 		},
@@ -567,6 +576,42 @@ func CommandsCatalog() []Command {
 			},
 		},
 		{
+			Path:         "program set-courses",
+			Summary:      "Reemplaza la seleccion de courses asociados a un programa.",
+			Method:       "POST",
+			Endpoint:     "/course-program/{id}/course",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--course", Type: "intSlice", Description: "IDs de courses que deben quedar asociados."},
+				{Name: "--dry-run", Type: "bool", Description: "Muestra el payload sin enviar peticiones."},
+			},
+		},
+		{
+			Path:         "program add-course",
+			Summary:      "Anade uno o varios courses a un programa sin tocar los ya asociados.",
+			Method:       "POST",
+			Endpoint:     "/course-program/{id}/course",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--course", Type: "intSlice", Description: "IDs de courses a anadir."},
+				{Name: "--dry-run", Type: "bool", Description: "Muestra el payload sin enviar peticiones."},
+			},
+		},
+		{
+			Path:         "program remove-course",
+			Summary:      "Quita uno o varios courses de un programa sin tocar los demas.",
+			Method:       "POST",
+			Endpoint:     "/course-program/{id}/course",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--course", Type: "intSlice", Description: "IDs de courses a quitar."},
+				{Name: "--dry-run", Type: "bool", Description: "Muestra el payload sin enviar peticiones."},
+			},
+		},
+		{
 			Path:         "program generate-syllabus",
 			Summary:      "Lanza la generacion de syllabus usando el context actual o uno proporcionado.",
 			Method:       "POST",
@@ -678,6 +723,27 @@ func CommandsCatalog() []Command {
 			},
 		},
 		{
+			Path:         "course create",
+			Summary:      "Crea o actualiza un course completo via /course/bulk y, si se le pasa --program, lo relaciona despues con el endpoint dedicado.",
+			Method:       "POST",
+			Endpoint:     "/course/bulk",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--program", Type: "int", Description: "ID del program a asociar despues via /course-program/{id}/course."},
+				{Name: "--json", Type: "string", Description: "Payload JSON inline."},
+				{Name: "--json-file", Type: "string", Description: "Ruta a un fichero JSON."},
+				{Name: "--dry-run", Type: "bool", Description: "Muestra el payload final sin enviar peticiones."},
+			},
+			Notes: []string{
+				"course_sections es obligatorio en /course/bulk.",
+				"Los modules markdown necesitan course_contents salvo que lleven empty=true.",
+				"El backend sincroniza el arbol: si omites sections/modules existentes, puede eliminarlos.",
+				"El backend puede responder 200 con errores parciales embebidos; el CLI inspecciona la respuesta y falla.",
+				"Si usas --program, el CLI hace una segunda llamada con add al endpoint /course-program/{id}/course para evitar depender de course_programs dentro del bulk.",
+			},
+		},
+		{
 			Path:         "course get",
 			Summary:      "Muestra un course con su arbol de sections y modules.",
 			Method:       "GET",
@@ -766,6 +832,34 @@ func CommandsCatalog() []Command {
 			},
 		},
 		{
+			Path:         "module create",
+			Summary:      "Crea un module nuevo a nivel course o section y resuelve order automaticamente si no se indica.",
+			Method:       "POST",
+			Endpoint:     "/course-module",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--name", Type: "string", Description: "Nombre visible del module."},
+				{Name: "--type", Type: "string", Description: "Tipo: markdown, activity, assignment o url."},
+				{Name: "--course-id", Type: "int", Description: "ID del course para modulos a nivel curso."},
+				{Name: "--section-id", Type: "int", Description: "ID de la section para modulos anidados."},
+				{Name: "--order", Type: "int", Description: "Posicion deseada; si se omite, el CLI calcula max(order)+1."},
+				{Name: "--status", Type: "string", Description: "Status inicial del module."},
+				{Name: "--url", Type: "string", Description: "URL del module cuando el tipo lo requiera."},
+				{Name: "--optional", Type: "bool", Description: "Marca el module como opcional."},
+				{Name: "--evaluable", Type: "bool", Description: "Marca el module como evaluable."},
+				{Name: "--position", Type: "string", Description: "Posicion logica before|after si quieres persistirla."},
+				{Name: "--metadata-json", Type: "string", Description: "Objeto JSON inline para metadata."},
+				{Name: "--metadata-file", Type: "string", Description: "Ruta a un fichero JSON para metadata."},
+				{Name: "--dry-run", Type: "bool", Description: "Muestra el payload resuelto sin enviar peticiones."},
+			},
+			Notes: []string{
+				"Usa --course-id para modulos a nivel curso o --section-id para modulos dentro de una section.",
+				"Si no indicas --order, el CLI lee el ambito elegido y calcula el siguiente order disponible.",
+				"Si indicas un order ya ocupado, el backend desplaza los modulos siguientes.",
+			},
+		},
+		{
 			Path:         "module set-content",
 			Summary:      "Escribe contenido manual en el course-content del module sin usar la generacion del modulo.",
 			Method:       "POST|PATCH + PATCH",
@@ -774,6 +868,7 @@ func CommandsCatalog() []Command {
 			Output:       "json|table",
 			Flags: []Flag{
 				{Name: "--file", Type: "string", Description: "Ruta a un fichero de texto o markdown."},
+				{Name: "--content-file", Type: "string", Description: "Alias explicito de --file."},
 				{Name: "--content", Type: "string", Description: "Contenido inline para escribir directamente."},
 				{Name: "--name", Type: "string", Description: "Nombre del course-content; por defecto usa el del modulo."},
 				{Name: "--mime", Type: "string", Description: "Mime del course-content; por defecto text/markdown para .md."},
@@ -801,6 +896,22 @@ func CommandsCatalog() []Command {
 			Notes: []string{
 				"Es un alias semantico de module approve.",
 				"En Hawkings, el estado de aprobacion del contenido vive en approved_at del module.",
+			},
+		},
+		{
+			Path:         "module update",
+			Summary:      "Alias semantico de module patch para hacer PATCH /only sobre un module.",
+			Method:       "PATCH",
+			Endpoint:     "/course-module/{id}/only",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--json", Type: "string", Description: "Patch JSON inline."},
+				{Name: "--json-file", Type: "string", Description: "Ruta a un fichero JSON."},
+				{Name: "--dry-run", Type: "bool", Description: "Muestra el payload sin enviar peticiones."},
+			},
+			Notes: []string{
+				"CLI alias de module patch para quien piense en terminos de update.",
 			},
 		},
 		{
