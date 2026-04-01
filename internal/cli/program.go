@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"net/url"
 	"sort"
 	"strings"
@@ -43,6 +44,7 @@ func newProgramListCommand(opts *rootOptions) *cobra.Command {
 	var search string
 	var status string
 	var spaceID int
+	var all bool
 	var with []string
 
 	command := &cobra.Command{
@@ -55,10 +57,10 @@ func newProgramListCommand(opts *rootOptions) *cobra.Command {
 			}
 
 			params := url.Values{}
-			if limit > 0 {
+			if limit > 0 && !all {
 				params.Set("limit", intToString(limit))
 			}
-			if page > 0 {
+			if page > 0 && !all {
 				params.Set("page", intToString(page))
 			}
 			if search != "" {
@@ -87,9 +89,17 @@ func newProgramListCommand(opts *rootOptions) *cobra.Command {
 				for _, item := range programs {
 					summaries = append(summaries, programSummaryFromDetail(item))
 				}
-				list = paginateProgramSummaries(filterProgramSummaries(summaries, search, status), page, limit)
+				if all {
+					list = paginateProgramSummaries(filterProgramSummaries(summaries, search, status), 1, 0)
+				} else {
+					list = paginateProgramSummaries(filterProgramSummaries(summaries, search, status), page, limit)
+				}
 			} else {
-				list, err = rt.Client.ListPrograms(ctx, params)
+				if all {
+					list, err = listAllPrograms(ctx, rt.Client, params)
+				} else {
+					list, err = rt.Client.ListPrograms(ctx, params)
+				}
 				if err != nil {
 					return err
 				}
@@ -114,6 +124,9 @@ func newProgramListCommand(opts *rootOptions) *cobra.Command {
 			}
 			writeLine("")
 			writeLine("Page %d/%d  Total %d", list.Page, list.Pages, list.Total)
+			if !all && list.Pages > 1 {
+				writeLine("Hint: usa --all para recuperar todos los resultados en una sola salida.")
+			}
 			return nil
 		},
 	}
@@ -123,9 +136,31 @@ func newProgramListCommand(opts *rootOptions) *cobra.Command {
 	command.Flags().StringVar(&search, "search", "", "Texto de busqueda")
 	command.Flags().StringVar(&status, "status", "", "Filtra por status")
 	command.Flags().IntVar(&spaceID, "space-id", 0, "Filtra por membresia real en un space usando /space/{id}/course-program")
+	command.Flags().BoolVar(&all, "all", false, "Recorre todas las paginas y devuelve todos los resultados")
 	command.Flags().StringArrayVar(&with, "with", nil, "Anade relaciones with[]")
 
 	return command
+}
+
+func listAllPrograms(ctx context.Context, client *api.Client, params url.Values) (api.ProgramList, error) {
+	firstPage, err := client.ListPrograms(ctx, params)
+	if err != nil {
+		return api.ProgramList{}, err
+	}
+
+	items := append([]api.ProgramSummary{}, firstPage.Data...)
+	for nextPage := 2; nextPage <= firstPage.Pages; nextPage++ {
+		pageParams := cloneURLValues(params)
+		pageParams.Set("page", intToString(nextPage))
+
+		next, err := client.ListPrograms(ctx, pageParams)
+		if err != nil {
+			return api.ProgramList{}, err
+		}
+		items = append(items, next.Data...)
+	}
+
+	return paginateProgramSummaries(items, 1, 0), nil
 }
 
 func newProgramGetCommand(opts *rootOptions) *cobra.Command {

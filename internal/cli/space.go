@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
@@ -36,6 +37,7 @@ func newSpaceListCommand(opts *rootOptions) *cobra.Command {
 	var search string
 	var enabled string
 	var personal string
+	var all bool
 	var with []string
 
 	command := &cobra.Command{
@@ -48,10 +50,10 @@ func newSpaceListCommand(opts *rootOptions) *cobra.Command {
 			}
 
 			params := url.Values{}
-			if limit > 0 {
+			if limit > 0 && !all {
 				params.Set("limit", intToString(limit))
 			}
-			if page > 0 {
+			if page > 0 && !all {
 				params.Set("page", intToString(page))
 			}
 			if search != "" {
@@ -67,7 +69,12 @@ func newSpaceListCommand(opts *rootOptions) *cobra.Command {
 			ctx, cancel := commandContext(rt)
 			defer cancel()
 
-			list, err := rt.Client.ListSpaces(ctx, params, uniqueStrings(append(defaultSpaceWith, with...)))
+			var list api.SpaceList
+			if all {
+				list, err = listAllSpaces(ctx, rt.Client, params, uniqueStrings(append(defaultSpaceWith, with...)))
+			} else {
+				list, err = rt.Client.ListSpaces(ctx, params, uniqueStrings(append(defaultSpaceWith, with...)))
+			}
 			if err != nil {
 				return err
 			}
@@ -93,6 +100,9 @@ func newSpaceListCommand(opts *rootOptions) *cobra.Command {
 			}
 			writeLine("")
 			writeLine("Page %d/%d  Total %d", list.Page, list.Pages, list.Total)
+			if !all && list.Pages > 1 {
+				writeLine("Hint: usa --all para recuperar todos los resultados en una sola salida.")
+			}
 			return nil
 		},
 	}
@@ -102,9 +112,69 @@ func newSpaceListCommand(opts *rootOptions) *cobra.Command {
 	command.Flags().StringVar(&search, "search", "", "Texto de busqueda")
 	command.Flags().StringVar(&enabled, "enabled", "", "Filtra por enabled=true|false")
 	command.Flags().StringVar(&personal, "personal", "", "Filtra por personal=true|false")
+	command.Flags().BoolVar(&all, "all", false, "Recorre todas las paginas y devuelve todos los resultados")
 	command.Flags().StringArrayVar(&with, "with", nil, "Relaciones extra via with[]")
 
 	return command
+}
+
+func listAllSpaces(ctx context.Context, client *api.Client, params url.Values, with []string) (api.SpaceList, error) {
+	firstPage, err := client.ListSpaces(ctx, params, with)
+	if err != nil {
+		return api.SpaceList{}, err
+	}
+
+	items := append([]api.SpaceSummary{}, firstPage.Data...)
+	for nextPage := 2; nextPage <= firstPage.Pages; nextPage++ {
+		pageParams := cloneURLValues(params)
+		pageParams.Set("page", intToString(nextPage))
+
+		next, err := client.ListSpaces(ctx, pageParams, with)
+		if err != nil {
+			return api.SpaceList{}, err
+		}
+		items = append(items, next.Data...)
+	}
+
+	return paginateSpaces(items, 1, 0), nil
+}
+
+func paginateSpaces(items []api.SpaceSummary, page, limit int) api.SpaceList {
+	if limit <= 0 {
+		limit = len(items)
+		if limit == 0 {
+			limit = 1
+		}
+	}
+	if page <= 0 {
+		page = 1
+	}
+
+	total := len(items)
+	pages := (total + limit - 1) / limit
+	if pages == 0 {
+		pages = 1
+	}
+	if page > pages {
+		page = pages
+	}
+
+	start := (page - 1) * limit
+	if start > total {
+		start = total
+	}
+	end := start + limit
+	if end > total {
+		end = total
+	}
+
+	return api.SpaceList{
+		Data:   items[start:end],
+		Pages:  pages,
+		Page:   page,
+		Offset: start,
+		Total:  total,
+	}
 }
 
 func newSpaceGetCommand(opts *rootOptions) *cobra.Command {

@@ -1,0 +1,11 @@
+version = 1
+profile = "dev"
+
+[profiles.dev]
+environment = "dev"
+base_url = "https://dev-data-api.hawkings.education/v1"
+x_api_key = ""
+api_key = ""
+platform_uuid = ""
+platform_name = ""
+timeout = "30s"

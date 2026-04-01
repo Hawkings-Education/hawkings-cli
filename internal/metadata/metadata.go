@@ -259,6 +259,7 @@ func EntitiesCatalog() []Entity {
 				"courseSectionsModulesContents",
 			},
 			Commands: []string{
+				"course list",
 				"course create",
 				"course get",
 				"course sections",
@@ -386,6 +387,7 @@ func CommandsCatalog() []Command {
 			Flags: []Flag{
 				{Name: "--limit", Type: "int", Description: "Limite por pagina."},
 				{Name: "--page", Type: "int", Description: "Pagina a solicitar."},
+				{Name: "--all", Type: "bool", Description: "Recorre todas las paginas y devuelve todos los resultados."},
 				{Name: "--search", Type: "string", Description: "Texto de busqueda."},
 				{Name: "--with", Type: "stringArray", Description: "Relaciones extra via with[]."},
 			},
@@ -408,6 +410,7 @@ func CommandsCatalog() []Command {
 			Flags: []Flag{
 				{Name: "--limit", Type: "int", Description: "Limite por pagina."},
 				{Name: "--page", Type: "int", Description: "Pagina a solicitar."},
+				{Name: "--all", Type: "bool", Description: "Recorre todas las paginas y devuelve todos los resultados."},
 				{Name: "--search", Type: "string", Description: "Texto de busqueda."},
 				{Name: "--enabled", Type: "string", Description: "Filtra por enabled=true|false."},
 				{Name: "--personal", Type: "string", Description: "Filtra por personal=true|false."},
@@ -638,7 +641,15 @@ func CommandsCatalog() []Command {
 			RequiresAuth: true,
 			Output:       "json|table",
 			Flags: []Flag{
+				{Name: "--force", Type: "bool", Description: "Pide al backend forzar la operacion si esa variante esta soportada."},
 				{Name: "--dry-run", Type: "bool", Description: "Muestra la operacion sin enviar peticiones."},
+			},
+			Notes: []string{
+				"El endpoint usa el syllabus ya guardado en el programa; no hay que mandarlo en el body.",
+				"Si falla con un 422 sobre algun campo interno como type, el origen suele estar en datos derivados del syllabus o de la template del programa.",
+				"La operacion puede tardar minutos; usa --timeout alto en programas grandes.",
+				"Un timeout del cliente no garantiza cancelacion en backend; comprueba program get o program courses antes de relanzar.",
+				"Tras un timeout, el programa puede quedar en courses-creating y un nuevo intento puede devolver 422 si ya existen courses parciales.",
 			},
 		},
 		{
@@ -651,6 +662,7 @@ func CommandsCatalog() []Command {
 			Flags: []Flag{
 				{Name: "--limit", Type: "int", Description: "Limite por pagina."},
 				{Name: "--page", Type: "int", Description: "Pagina a solicitar."},
+				{Name: "--all", Type: "bool", Description: "Recorre todas las paginas y devuelve todos los resultados."},
 				{Name: "--search", Type: "string", Description: "Texto de busqueda."},
 				{Name: "--status", Type: "string", Description: "Filtra por estado del programa."},
 				{Name: "--space-id", Type: "int", Description: "Filtra por membresia real en un space usando /space/{id}/course-program."},
@@ -658,6 +670,7 @@ func CommandsCatalog() []Command {
 			},
 			Notes: []string{
 				"Cuando usas --space-id, el CLI consulta el endpoint del space y aplica search/status/paginacion en cliente.",
+				"En JSON, el listado siempre devuelve data junto con page, pages y total; usa --all si necesitas todos los resultados en una sola salida.",
 			},
 		},
 		{
@@ -720,6 +733,26 @@ func CommandsCatalog() []Command {
 			},
 			Notes: []string{
 				"Usa courses_count del listado; para syllabus hay que ir a program get o program syllabus.",
+			},
+		},
+		{
+			Path:         "course list",
+			Summary:      "Lista los courses accesibles y permite buscar por texto libre.",
+			Method:       "GET",
+			Endpoint:     "/course",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--limit", Type: "int", Description: "Limite por pagina."},
+				{Name: "--page", Type: "int", Description: "Pagina a solicitar."},
+				{Name: "--all", Type: "bool", Description: "Recorre todas las paginas y devuelve todos los resultados."},
+				{Name: "--search", Type: "string", Description: "Texto libre para buscar por titulo, remote_id o uuid."},
+				{Name: "--status", Type: "string", Description: "Filtra por status."},
+				{Name: "--with", Type: "stringArray", Description: "Relaciones extra via with[]."},
+			},
+			Notes: []string{
+				"En JSON, el listado siempre devuelve data junto con page, pages y total; usa --all si necesitas todos los resultados en una sola salida.",
+				"Sirve para descubrir IDs de cursos reutilizables antes de usar program add-course, set-courses o remove-course.",
 			},
 		},
 		{

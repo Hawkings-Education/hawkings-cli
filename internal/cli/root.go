@@ -118,6 +118,17 @@ func commandContext(rt *runtime) (context.Context, context.CancelFunc) {
 	return api.WithTimeout(context.Background(), timeout)
 }
 
+func commandContextWithMinimum(rt *runtime, explicitOverride time.Duration, minimum time.Duration) (context.Context, context.CancelFunc) {
+	timeout := rt.Config.Timeout
+	if timeout == 0 {
+		timeout = config.DefaultTimeout
+	}
+	if explicitOverride == 0 && timeout < minimum {
+		timeout = minimum
+	}
+	return api.WithTimeout(context.Background(), timeout)
+}
+
 func failJSON(format output.Format, message string) error {
 	if output.WantsJSON(format) {
 		_ = output.PrintJSON(map[string]string{"error": message})

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"time"
 
 	"hawkings-cli/internal/api"
 	"hawkings-cli/internal/output"
@@ -184,7 +185,7 @@ func newProgramDeleteCommand(opts *rootOptions) *cobra.Command {
 				})
 			}
 
-			ctx, cancel := commandContext(rt)
+			ctx, cancel := commandContextWithMinimum(rt, opts.timeout, 10*time.Minute)
 			defer cancel()
 
 			if err := rt.Client.DeleteProgram(ctx, args[0]); err != nil {
@@ -498,11 +499,38 @@ func newProgramGenerateSyllabusCommand(opts *rootOptions) *cobra.Command {
 }
 
 func newProgramCreateCoursesCommand(opts *rootOptions) *cobra.Command {
+	var force bool
 	var dryRun bool
 
 	command := &cobra.Command{
 		Use:   "create-courses <program-id>",
 		Short: "Crea los courses a partir del syllabus ya almacenado en el programa",
+		Long: `
+Lanza POST /course-program/{id}/syllabus/course.
+
+El backend lee el syllabus ya guardado en el programa y crea automaticamente
+los courses, sections y modules. No hace falta mandar el syllabus en el body.
+
+Requisitos reales del backend:
+- el programa debe tener syllabus
+- el programa debe tener course_program_template_id
+- el programa no debe tener courses ya creados, salvo que el backend admita force
+- la operacion puede tardar minutos; usa un --timeout alto en programas grandes
+
+Si recibes un 422 con algun campo interno como "type", el problema no suele ser
+el body del comando, sino algun dato derivado del syllabus o de la template del programa.
+
+Comportamiento operativo importante:
+- un timeout del cliente no garantiza que el backend haya cancelado el trabajo
+- el programa puede quedar temporalmente en status courses-creating
+- si reintentas despues de un timeout, el backend puede responder 422 porque ya detecta courses creados
+- tras un timeout, comprueba primero con program get o program courses antes de relanzar
+
+Ejemplos:
+- hawkings --timeout 300s program create-courses 5315
+- hawkings program get 5315
+- hawkings program courses 5315
+`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rt, err := buildRuntime(opts, true)
@@ -510,19 +538,24 @@ func newProgramCreateCoursesCommand(opts *rootOptions) *cobra.Command {
 				return err
 			}
 
+			payload := map[string]any{}
+			if force {
+				payload["force"] = true
+			}
+
 			if dryRun {
 				return output.PrintJSON(map[string]any{
 					"action":     "program create-courses",
 					"program_id": args[0],
 					"endpoint":   "/course-program/" + args[0] + "/syllabus/course",
-					"payload":    map[string]any{},
+					"payload":    payload,
 				})
 			}
 
-			ctx, cancel := commandContext(rt)
+			ctx, cancel := commandContextWithMinimum(rt, opts.timeout, 10*time.Minute)
 			defer cancel()
 
-			program, err := rt.Client.CreateProgramCoursesFromSyllabus(ctx, args[0])
+			program, err := rt.Client.CreateProgramCoursesFromSyllabus(ctx, args[0], payload)
 			if err != nil {
 				return err
 			}
@@ -548,6 +581,7 @@ func newProgramCreateCoursesCommand(opts *rootOptions) *cobra.Command {
 		},
 	}
 
+	command.Flags().BoolVar(&force, "force", false, "Pide al backend forzar la operacion si esa variante esta soportada")
 	command.Flags().BoolVar(&dryRun, "dry-run", false, "Muestra la operacion sin enviar peticiones")
 
 	return command

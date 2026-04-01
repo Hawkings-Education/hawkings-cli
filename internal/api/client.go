@@ -177,6 +177,26 @@ type ProgramList struct {
 	Total  int              `json:"total"`
 }
 
+type CourseSummary struct {
+	ID        int            `json:"id"`
+	Name      string         `json:"name"`
+	Status    *string        `json:"status"`
+	RemoteID  *string        `json:"remote_id"`
+	Image     *string        `json:"image"`
+	Enabled   bool           `json:"enabled"`
+	CreatedAt string         `json:"created_at"`
+	Metadata  map[string]any `json:"metadata"`
+	Language  *Language      `json:"language"`
+}
+
+type CourseList struct {
+	Data   []CourseSummary `json:"data"`
+	Pages  int             `json:"pages"`
+	Page   int             `json:"page"`
+	Offset int             `json:"offset"`
+	Total  int             `json:"total"`
+}
+
 type CourseAreaSummary struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
@@ -327,6 +347,15 @@ func (c *Client) ListPrograms(ctx context.Context, params url.Values) (ProgramLi
 	var list ProgramList
 	if err := c.getJSON(ctx, "/course-program", params, &list); err != nil {
 		return ProgramList{}, err
+	}
+	return list, nil
+}
+
+func (c *Client) ListCourses(ctx context.Context, params url.Values, with []string) (CourseList, error) {
+	var list CourseList
+	params = withValues(params, with)
+	if err := c.getJSON(ctx, "/course", params, &list); err != nil {
+		return CourseList{}, err
 	}
 	return list, nil
 }
@@ -517,9 +546,12 @@ func (c *Client) GenerateProgramSyllabus(ctx context.Context, id string, payload
 	return program, nil
 }
 
-func (c *Client) CreateProgramCoursesFromSyllabus(ctx context.Context, id string) (ProgramDetail, error) {
+func (c *Client) CreateProgramCoursesFromSyllabus(ctx context.Context, id string, payload map[string]any) (ProgramDetail, error) {
 	var program ProgramDetail
-	if err := c.sendJSON(ctx, http.MethodPost, "/course-program/"+id+"/syllabus/course", nil, map[string]any{}, &program); err != nil {
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	if err := c.sendJSON(ctx, http.MethodPost, "/course-program/"+id+"/syllabus/course", nil, payload, &program); err != nil {
 		return ProgramDetail{}, err
 	}
 	return program, nil

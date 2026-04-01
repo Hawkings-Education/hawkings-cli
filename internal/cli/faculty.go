@@ -25,6 +25,7 @@ func newFacultyListCommand(opts *rootOptions) *cobra.Command {
 	var limit int
 	var page int
 	var search string
+	var all bool
 	var with []string
 
 	command := &cobra.Command{
@@ -44,7 +45,14 @@ func newFacultyListCommand(opts *rootOptions) *cobra.Command {
 			ctx, cancel := commandContext(rt)
 			defer cancel()
 
-			list, err := listAllCourseFaculties(ctx, rt.Client, params, uniqueStrings(append(defaultFacultyWith, with...)), page, limit)
+			targetPage := page
+			targetLimit := limit
+			if all {
+				targetPage = 1
+				targetLimit = 0
+			}
+
+			list, err := listAllCourseFaculties(ctx, rt.Client, params, uniqueStrings(append(defaultFacultyWith, with...)), targetPage, targetLimit)
 			if err != nil {
 				return err
 			}
@@ -69,6 +77,9 @@ func newFacultyListCommand(opts *rootOptions) *cobra.Command {
 
 			writeLine("")
 			writeLine("Page %d/%d  Total %d", list.Page, list.Pages, list.Total)
+			if !all && list.Pages > 1 {
+				writeLine("Hint: usa --all para recuperar todos los resultados en una sola salida.")
+			}
 			return nil
 		},
 	}
@@ -76,6 +87,7 @@ func newFacultyListCommand(opts *rootOptions) *cobra.Command {
 	command.Flags().IntVar(&limit, "limit", 20, "Limite por pagina")
 	command.Flags().IntVar(&page, "page", 1, "Pagina")
 	command.Flags().StringVar(&search, "search", "", "Texto de busqueda")
+	command.Flags().BoolVar(&all, "all", false, "Recorre todas las paginas y devuelve todos los resultados")
 	command.Flags().StringArrayVar(&with, "with", nil, "Relaciones extra via with[]")
 
 	return command
