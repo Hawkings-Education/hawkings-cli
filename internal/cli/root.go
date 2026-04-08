@@ -59,6 +59,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(newSpaceCommand(opts))
 	cmd.AddCommand(newProgramCommand(opts))
 	cmd.AddCommand(newCourseCommand(opts))
+	cmd.AddCommand(newScormCommand(opts))
 	cmd.AddCommand(newSectionCommand(opts))
 	cmd.AddCommand(newModuleCommand(opts))
 	cmd.AddCommand(newContentCommand(opts))

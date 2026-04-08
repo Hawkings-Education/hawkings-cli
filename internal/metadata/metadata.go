@@ -275,6 +275,20 @@ func EntitiesCatalog() []Entity {
 			},
 		},
 		{
+			Name:     "scorm",
+			Summary:  "Recurso SCORM creado por endpoint dedicado.",
+			Endpoint: "/scorm",
+			KeyFields: []string{
+				"id", "name",
+			},
+			Commands: []string{
+				"scorm create",
+			},
+			Notes: []string{
+				"El CLI no envia user_id ni language_id aunque aparezcan en el payload de entrada.",
+			},
+		},
+		{
 			Name:     "section",
 			Summary:  "Subdivision de un course que agrupa modules.",
 			Parent:   "course",
@@ -665,11 +679,14 @@ func CommandsCatalog() []Command {
 				{Name: "--all", Type: "bool", Description: "Recorre todas las paginas y devuelve todos los resultados."},
 				{Name: "--search", Type: "string", Description: "Texto de busqueda."},
 				{Name: "--status", Type: "string", Description: "Filtra por estado del programa."},
+				{Name: "--order-column", Type: "string", Description: "Se envia como order_column; soporta varias columnas separadas por ';'."},
+				{Name: "--order-mode", Type: "string", Description: "Se envia como order_mode; permite prioridad custom para status y direccion por columna."},
 				{Name: "--space-id", Type: "int", Description: "Filtra por membresia real en un space usando /space/{id}/course-program."},
 				{Name: "--with", Type: "stringArray", Description: "Relaciones a incluir mediante with[]."},
 			},
 			Notes: []string{
 				"Cuando usas --space-id, el CLI consulta el endpoint del space y aplica search/status/paginacion en cliente.",
+				"Con --space-id, la ordenacion por status/name tambien se replica en cliente para mantener el mismo comportamiento.",
 				"En JSON, el listado siempre devuelve data junto con page, pages y total; usa --all si necesitas todos los resultados en una sola salida.",
 			},
 		},
@@ -774,6 +791,23 @@ func CommandsCatalog() []Command {
 				"El backend sincroniza el arbol: si omites sections/modules existentes, puede eliminarlos.",
 				"El backend puede responder 200 con errores parciales embebidos; el CLI inspecciona la respuesta y falla.",
 				"Si usas --program, el CLI hace una segunda llamada con add al endpoint /course-program/{id}/course para evitar depender de course_programs dentro del bulk.",
+			},
+		},
+		{
+			Path:         "scorm create",
+			Summary:      "Crea un recurso SCORM con payload JSON saneado antes de POST /scorm.",
+			Method:       "POST",
+			Endpoint:     "/scorm",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--json", Type: "string", Description: "Payload JSON inline."},
+				{Name: "--json-file", Type: "string", Description: "Ruta a un fichero JSON."},
+				{Name: "--dry-run", Type: "bool", Description: "Muestra el payload final sin enviar peticiones."},
+			},
+			Notes: []string{
+				"El CLI elimina user_id y language_id del payload antes de enviarlo.",
+				"Si el backend sigue devolviendo status legacy courses_created, el CLI lo muestra como courses-created.",
 			},
 		},
 		{

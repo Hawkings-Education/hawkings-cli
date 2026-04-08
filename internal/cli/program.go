@@ -43,6 +43,8 @@ func newProgramListCommand(opts *rootOptions) *cobra.Command {
 	var page int
 	var search string
 	var status string
+	var orderColumn string
+	var orderMode string
 	var spaceID int
 	var all bool
 	var with []string
@@ -69,6 +71,12 @@ func newProgramListCommand(opts *rootOptions) *cobra.Command {
 			if status != "" {
 				params.Set("status", status)
 			}
+			if orderColumn != "" {
+				params.Set("order_column", orderColumn)
+			}
+			if orderMode != "" {
+				params.Set("order_mode", orderMode)
+			}
 			for _, value := range with {
 				if value != "" {
 					params.Add("with[]", value)
@@ -87,12 +95,13 @@ func newProgramListCommand(opts *rootOptions) *cobra.Command {
 				}
 				summaries := make([]api.ProgramSummary, 0, len(programs))
 				for _, item := range programs {
-					summaries = append(summaries, programSummaryFromDetail(item))
+					summaries = append(summaries, normalizeProgramSummary(programSummaryFromDetail(item)))
 				}
+				summaries = sortProgramSummaries(filterProgramSummaries(summaries, search, status), orderColumn, orderMode)
 				if all {
-					list = paginateProgramSummaries(filterProgramSummaries(summaries, search, status), 1, 0)
+					list = paginateProgramSummaries(summaries, 1, 0)
 				} else {
-					list = paginateProgramSummaries(filterProgramSummaries(summaries, search, status), page, limit)
+					list = paginateProgramSummaries(summaries, page, limit)
 				}
 			} else {
 				if all {
@@ -103,6 +112,7 @@ func newProgramListCommand(opts *rootOptions) *cobra.Command {
 				if err != nil {
 					return err
 				}
+				list = normalizeProgramList(list)
 			}
 
 			if output.WantsJSON(rt.Format) {
@@ -135,6 +145,8 @@ func newProgramListCommand(opts *rootOptions) *cobra.Command {
 	command.Flags().IntVar(&page, "page", 1, "Pagina")
 	command.Flags().StringVar(&search, "search", "", "Texto de busqueda")
 	command.Flags().StringVar(&status, "status", "", "Filtra por status")
+	command.Flags().StringVar(&orderColumn, "order-column", "", "Columnas de ordenacion enviadas como order_column, por ejemplo 'status;name'")
+	command.Flags().StringVar(&orderMode, "order-mode", "", "Modos de ordenacion enviados como order_mode, por ejemplo 'completed,processed,courses-created;ASC'")
 	command.Flags().IntVar(&spaceID, "space-id", 0, "Filtra por membresia real en un space usando /space/{id}/course-program")
 	command.Flags().BoolVar(&all, "all", false, "Recorre todas las paginas y devuelve todos los resultados")
 	command.Flags().StringArrayVar(&with, "with", nil, "Anade relaciones with[]")
@@ -190,6 +202,7 @@ func newProgramGetCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			program = normalizeProgramDetail(program)
 
 			if output.WantsJSON(rt.Format) {
 				return output.PrintJSON(program)
@@ -243,6 +256,7 @@ func newProgramSyllabusCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			program = normalizeProgramDetail(program)
 
 			payload := map[string]any{
 				"id":           program.ID,
@@ -287,6 +301,7 @@ func newProgramTreeCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			program = normalizeProgramDetail(program)
 
 			courses := sortedCourses(program.Courses)
 			courseNodes := make([]map[string]any, 0, len(courses))
@@ -419,6 +434,7 @@ func newProgramConfigCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			program = normalizeProgramDetail(program)
 
 			payload := map[string]any{
 				"id":                          program.ID,
@@ -487,6 +503,7 @@ func newProgramCoursesCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			program = normalizeProgramDetail(program)
 
 			payload := map[string]any{
 				"program": map[string]any{
@@ -678,11 +695,11 @@ func programSummaryFromDetail(program api.ProgramDetail) api.ProgramSummary {
 
 func filterProgramSummaries(programs []api.ProgramSummary, search, status string) []api.ProgramSummary {
 	search = strings.ToLower(strings.TrimSpace(search))
-	status = strings.TrimSpace(status)
+	status = canonicalProgramStatus(status)
 
 	filtered := make([]api.ProgramSummary, 0, len(programs))
 	for _, item := range programs {
-		if status != "" && stringPtrValue(item.Status) != status {
+		if status != "" && canonicalProgramStatus(stringPtrValue(item.Status)) != status {
 			continue
 		}
 		if search != "" {
@@ -698,6 +715,127 @@ func filterProgramSummaries(programs []api.ProgramSummary, search, status string
 		filtered = append(filtered, item)
 	}
 	return filtered
+}
+
+type programSortDirective struct {
+	column string
+	mode   string
+}
+
+func sortProgramSummaries(programs []api.ProgramSummary, orderColumn, orderMode string) []api.ProgramSummary {
+	directives := parseProgramSortDirectives(orderColumn, orderMode)
+	if len(directives) == 0 {
+		return append([]api.ProgramSummary(nil), programs...)
+	}
+
+	sorted := append([]api.ProgramSummary(nil), programs...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return compareProgramSummaries(sorted[i], sorted[j], directives) < 0
+	})
+	return sorted
+}
+
+func parseProgramSortDirectives(orderColumn, orderMode string) []programSortDirective {
+	columns := splitSemicolonList(orderColumn)
+	if len(columns) == 0 {
+		return nil
+	}
+	modes := splitSemicolonList(orderMode)
+	directives := make([]programSortDirective, 0, len(columns))
+	for index, column := range columns {
+		mode := "ASC"
+		if index < len(modes) {
+			mode = modes[index]
+		}
+		directives = append(directives, programSortDirective{
+			column: strings.ToLower(column),
+			mode:   mode,
+		})
+	}
+	return directives
+}
+
+func splitSemicolonList(value string) []string {
+	raw := strings.Split(value, ";")
+	items := make([]string, 0, len(raw))
+	for _, item := range raw {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
+func compareProgramSummaries(left, right api.ProgramSummary, directives []programSortDirective) int {
+	for _, directive := range directives {
+		var cmp int
+		switch directive.column {
+		case "status":
+			cmp = compareProgramStatusOrder(stringPtrValue(left.Status), stringPtrValue(right.Status), directive.mode)
+		case "name":
+			cmp = compareProgramStringOrder(left.Name, right.Name, directive.mode)
+		default:
+			continue
+		}
+		if cmp != 0 {
+			return cmp
+		}
+	}
+	return 0
+}
+
+func compareProgramStatusOrder(left, right, mode string) int {
+	left = canonicalProgramStatus(left)
+	right = canonicalProgramStatus(right)
+
+	if strings.Contains(mode, ",") {
+		return compareProgramStatusPriority(left, right, mode)
+	}
+	return compareProgramStringOrder(left, right, mode)
+}
+
+func compareProgramStatusPriority(left, right, mode string) int {
+	priority := map[string]int{}
+	for index, item := range strings.Split(mode, ",") {
+		item = canonicalProgramStatus(strings.TrimSpace(item))
+		if item == "" {
+			continue
+		}
+		if _, exists := priority[item]; !exists {
+			priority[item] = index
+		}
+	}
+
+	leftIndex, leftKnown := priority[left]
+	rightIndex, rightKnown := priority[right]
+	if leftKnown != rightKnown {
+		if leftKnown {
+			return -1
+		}
+		return 1
+	}
+	if leftKnown && rightKnown && leftIndex != rightIndex {
+		if leftIndex < rightIndex {
+			return -1
+		}
+		return 1
+	}
+	return compareProgramStringOrder(left, right, "ASC")
+}
+
+func compareProgramStringOrder(left, right, mode string) int {
+	leftFolded := strings.ToLower(strings.TrimSpace(left))
+	rightFolded := strings.ToLower(strings.TrimSpace(right))
+
+	cmp := strings.Compare(leftFolded, rightFolded)
+	if cmp == 0 {
+		cmp = strings.Compare(strings.TrimSpace(left), strings.TrimSpace(right))
+	}
+	if strings.EqualFold(strings.TrimSpace(mode), "DESC") {
+		return -cmp
+	}
+	return cmp
 }
 
 func paginateProgramSummaries(programs []api.ProgramSummary, page, limit int) api.ProgramList {

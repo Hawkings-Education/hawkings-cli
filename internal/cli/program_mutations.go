@@ -56,6 +56,7 @@ func newProgramCreateCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			program = normalizeProgramDetail(program)
 
 			response := map[string]any{
 				"program": program,
@@ -134,6 +135,7 @@ func newProgramUpdateCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			updated = normalizeProgramDetail(updated)
 
 			if output.WantsJSON(rt.Format) {
 				return output.PrintJSON(updated)
@@ -470,6 +472,7 @@ func newProgramGenerateSyllabusCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			program = normalizeProgramDetail(program)
 
 			if output.WantsJSON(rt.Format) {
 				return output.PrintJSON(program)
@@ -531,7 +534,7 @@ Ejemplos:
 - hawkings program get 5315
 - hawkings program courses 5315
 `,
-		Args:  cobra.ExactArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rt, err := buildRuntime(opts, true)
 			if err != nil {
@@ -559,6 +562,7 @@ Ejemplos:
 			if err != nil {
 				return err
 			}
+			program = normalizeProgramDetail(program)
 
 			if output.WantsJSON(rt.Format) {
 				return output.PrintJSON(program)

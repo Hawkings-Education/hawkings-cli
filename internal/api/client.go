@@ -445,6 +445,14 @@ func (c *Client) CreateCourseBulk(ctx context.Context, payload map[string]any) (
 	return result, nil
 }
 
+func (c *Client) CreateScorm(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	var result map[string]any
+	if err := c.sendJSON(ctx, http.MethodPost, "/scorm", nil, payload, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (c *Client) UpdateCourseModuleOnly(ctx context.Context, id string, payload map[string]any) (CourseModule, error) {
 	var module CourseModule
 	if err := c.sendJSON(ctx, http.MethodPatch, "/course-module/"+id+"/only", nil, payload, &module); err != nil {

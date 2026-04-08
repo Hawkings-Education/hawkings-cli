@@ -239,8 +239,45 @@ func programHasCourses(program api.ProgramDetail) bool {
 	return len(program.Courses) > 0 || anyInt(program.CoursesCount) > 0
 }
 
+func canonicalProgramStatus(status string) string {
+	status = strings.TrimSpace(status)
+	switch status {
+	case "courses_created":
+		return "courses-created"
+	default:
+		return status
+	}
+}
+
+func normalizeProgramSummary(program api.ProgramSummary) api.ProgramSummary {
+	status := canonicalProgramStatus(stringPtrValue(program.Status))
+	if status == "" {
+		program.Status = nil
+		return program
+	}
+	program.Status = ptr(status)
+	return program
+}
+
+func normalizeProgramList(list api.ProgramList) api.ProgramList {
+	for i := range list.Data {
+		list.Data[i] = normalizeProgramSummary(list.Data[i])
+	}
+	return list
+}
+
+func normalizeProgramDetail(program api.ProgramDetail) api.ProgramDetail {
+	status := canonicalProgramStatus(stringPtrValue(program.Status))
+	if status == "" {
+		program.Status = nil
+		return program
+	}
+	program.Status = ptr(status)
+	return program
+}
+
 func programStatusHint(program api.ProgramDetail) string {
-	status := strings.TrimSpace(stringPtrValue(program.Status))
+	status := canonicalProgramStatus(stringPtrValue(program.Status))
 	hasSyllabus := programHasSyllabus(program)
 	hasCourses := programHasCourses(program)
 
@@ -282,7 +319,7 @@ func programStatusHint(program api.ProgramDetail) string {
 }
 
 func normalizedStatus(value *string) string {
-	status := strings.TrimSpace(stringPtrValue(value))
+	status := canonicalProgramStatus(stringPtrValue(value))
 	if status == "" {
 		return "unknown"
 	}
@@ -290,13 +327,13 @@ func normalizedStatus(value *string) string {
 }
 
 func programStatusSortKey(status string) int {
+	status = canonicalProgramStatus(status)
 	order := []string{
 		"created",
 		"syllabus-processing",
 		"syllabus-processed",
 		"courses-creating",
 		"courses-created",
-		"courses_created",
 		"processing",
 		"processed",
 		"completed",
@@ -321,4 +358,8 @@ func printOptionalBlock(title, body string) {
 	writeLine("")
 	writeLine("%s:", title)
 	writeLine("%s", body)
+}
+
+func ptr[T any](value T) *T {
+	return &value
 }

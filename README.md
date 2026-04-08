@@ -5,6 +5,7 @@ CLI para Hawkings.
 Sirve para trabajar con:
 - `program`
 - `course`
+- `scorm`
 - `section`
 - `module`
 - `content`
@@ -133,6 +134,14 @@ Buscar programas por texto:
 hawkings program list --search "olivos"
 ```
 
+Listar programas con prioridad custom por status y luego nombre:
+
+```bash
+hawkings program list \
+  --order-column 'status;name' \
+  --order-mode 'completed,processed,courses-created;ASC'
+```
+
 Buscar cursos por texto:
 
 ```bash
@@ -170,6 +179,12 @@ Crear un curso completo y asociarlo a un programa:
 hawkings course create --program 5544 --json-file ./course.json
 ```
 
+Crear un recurso SCORM sin enviar `user_id` ni `language_id` aunque vengan en el JSON:
+
+```bash
+hawkings scorm create --json-file ./scorm.json
+```
+
 Crear los courses de un programa que ya tiene syllabus:
 
 ```bash
@@ -199,7 +214,9 @@ hawkings describe command "course create"
 - `program list`, `course list`, `space list` y `faculty list` soportan `--all` para recorrer todas las paginas de forma explicita.
 - `program create-courses` llama a `/course-program/{id}/syllabus/course` y usa el syllabus ya guardado en el programa.
 - `program create-courses` puede tardar minutos. Si el cliente hace timeout, verifica primero con `program get` o `program courses` antes de reintentar.
+- `program list` acepta `--order-column` y `--order-mode`; por ejemplo `status;name` con `completed,processed,courses-created;ASC`.
 - Para reutilizar cursos existentes: `hawkings course list --all` para descubrir IDs y luego `hawkings program add-course <program-id> --course <course-id>`.
 - `course create --program` crea el curso via `/course/bulk` y luego lo relaciona con `POST /course-program/{id}/course`.
+- `scorm create` sanea el payload y no envia `user_id` ni `language_id`.
 - `module content` trunca por defecto para no saturar contexto. Usa `--full` si quieres el cuerpo completo.
 - `module update` y `module patch` son equivalentes.
