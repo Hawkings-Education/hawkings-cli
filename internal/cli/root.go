@@ -13,6 +13,7 @@ import (
 	"hawkings-cli/internal/output"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 type rootOptions struct {
@@ -38,7 +39,8 @@ func NewRootCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "hawkings",
-		Short: "CLI de Hawkings con perfiles, config TOML y salida estable en JSON",
+		Short: "Hawkings CLI: mutaciones seguras y salida estable para el backend Laravel",
+		Long:  rootHelpIntro(),
 	}
 
 	cmd.PersistentFlags().StringVar(&opts.profile, "profile", "", "Perfil a usar")
@@ -140,4 +142,112 @@ func failJSON(format output.Format, message string) error {
 
 func writeLine(format string, args ...any) {
 	fmt.Fprintf(os.Stdout, format+"\n", args...)
+}
+
+func rootHelpIntro() string {
+	bannerLines := []string{
+		" _                _    _",
+		"| |__   __ ___      _| | _(_)_ __   __ _ ___",
+		"| '_ \\ / _' \\ \\ /\\ / / |/ / | '_ \\ / _' / __|",
+		"| | | | (_| |\\ V  V /|   <| | | | | (_| \\__ \\",
+		"|_| |_|\\__,_| \\_/\\_/ |_|\\_\\_|_| |_|\\__, |___/",
+		"                                   |___/",
+	}
+
+	intro := strings.Join([]string{
+		"CLI de Hawkings para operar contra el backend Laravel con perfiles,",
+		"config TOML, dry-run y salida estable en JSON.",
+	}, "\n")
+
+	if !supportsANSIColor() {
+		return "\n" + strings.Join(bannerLines, "\n") + "\n\n" + intro + "\n"
+	}
+
+	return "\n" + gradientASCII(bannerLines) + "\n\n" + ansiRGB(136, 229, 255) + intro + ansiReset() + "\n"
+}
+
+func supportsANSIColor() bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	if strings.EqualFold(os.Getenv("TERM"), "dumb") {
+		return false
+	}
+	return term.IsTerminal(int(os.Stdout.Fd()))
+}
+
+func gradientASCII(lines []string) string {
+	start := [3]int{76, 201, 240}
+	mid := [3]int{67, 97, 238}
+	end := [3]int{181, 23, 158}
+
+	var out strings.Builder
+
+	for lineIndex, line := range lines {
+		visible := 0
+		for _, r := range line {
+			if r != ' ' {
+				visible++
+			}
+		}
+
+		if visible == 0 {
+			out.WriteString(line)
+		} else {
+			seen := 0
+			for _, r := range line {
+				if r == ' ' {
+					out.WriteRune(r)
+					continue
+				}
+
+				ratio := 0.0
+				if visible > 1 {
+					ratio = float64(seen) / float64(visible-1)
+				}
+
+				color := interpolateGradient(start, mid, end, ratio)
+				out.WriteString(ansiRGB(color[0], color[1], color[2]))
+				out.WriteRune(r)
+				seen++
+			}
+			out.WriteString(ansiReset())
+		}
+
+		if lineIndex < len(lines)-1 {
+			out.WriteByte('\n')
+		}
+	}
+
+	return out.String()
+}
+
+func interpolateGradient(start, mid, end [3]int, ratio float64) [3]int {
+	if ratio <= 0.5 {
+		return interpolateColor(start, mid, ratio*2)
+	}
+	return interpolateColor(mid, end, (ratio-0.5)*2)
+}
+
+func interpolateColor(from, to [3]int, ratio float64) [3]int {
+	if ratio < 0 {
+		ratio = 0
+	}
+	if ratio > 1 {
+		ratio = 1
+	}
+
+	return [3]int{
+		from[0] + int(float64(to[0]-from[0])*ratio),
+		from[1] + int(float64(to[1]-from[1])*ratio),
+		from[2] + int(float64(to[2]-from[2])*ratio),
+	}
+}
+
+func ansiRGB(r, g, b int) string {
+	return fmt.Sprintf("\x1b[38;2;%d;%d;%dm", r, g, b)
+}
+
+func ansiReset() string {
+	return "\x1b[0m"
 }

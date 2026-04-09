@@ -223,6 +223,7 @@ func EntitiesCatalog() []Entity {
 				"program delete",
 				"program set-spaces",
 				"program set-courses",
+				"program reorder-courses",
 				"program add-course",
 				"program remove-course",
 				"program generate-syllabus",
@@ -602,6 +603,24 @@ func CommandsCatalog() []Command {
 			Flags: []Flag{
 				{Name: "--course", Type: "intSlice", Description: "IDs de courses que deben quedar asociados."},
 				{Name: "--dry-run", Type: "bool", Description: "Muestra el payload sin enviar peticiones."},
+			},
+		},
+		{
+			Path:         "program reorder-courses",
+			Summary:      "Reordena los courses de un programa con un payload JSON completo y validado contra el estado actual.",
+			Method:       "POST",
+			Endpoint:     "/course-program/{id}/course",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--json", Type: "string", Description: "Payload JSON inline."},
+				{Name: "--json-file", Type: "string", Description: "Ruta a un fichero JSON."},
+				{Name: "--dry-run", Type: "bool", Description: "Muestra el payload validado sin enviar peticiones."},
+			},
+			Notes: []string{
+				"Exige selected y order en el payload.",
+				"Antes de mutar, el CLI comprueba que selected coincide exactamente con los courses actuales del programa.",
+				"order debe cubrir todas las posiciones 1..N y selected debe venir ya ordenado segun ese mapa.",
 			},
 		},
 		{

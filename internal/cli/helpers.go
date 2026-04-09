@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -136,9 +137,15 @@ func anyInt(value any) int {
 		return int(v)
 	case float32:
 		return int(v)
+	case json.Number:
+		if parsed, err := v.Int64(); err == nil {
+			return int(parsed)
+		}
 	default:
 		return 0
 	}
+
+	return 0
 }
 
 func anyResolvedValue(resolved bool, value any, fallback any) any {
