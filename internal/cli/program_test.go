@@ -88,3 +88,50 @@ func TestValidateProgramCourseSetMatchesCurrent(t *testing.T) {
 		t.Fatal("expected mismatched sets to fail")
 	}
 }
+
+func TestValidatePayloadFieldsAllowsResearchInstructions(t *testing.T) {
+	payload := map[string]any{
+		"name":                  "Program",
+		"language_id":           json.Number("1"),
+		"research_instructions": "Use current sources.",
+	}
+
+	if err := validatePayloadFields("program create", payload, programCreatePayloadFields); err != nil {
+		t.Fatalf("expected payload to pass, got %v", err)
+	}
+}
+
+func TestValidatePayloadFieldsRejectsUnknownField(t *testing.T) {
+	payload := map[string]any{
+		"name":          "Program",
+		"language_id":   json.Number("1"),
+		"unexpected_id": json.Number("99"),
+	}
+
+	if err := validatePayloadFields("program create", payload, programCreatePayloadFields); err == nil {
+		t.Fatal("expected unsupported field to fail")
+	}
+}
+
+func TestValidateProgramPersistedPayloadFieldsRejectsMissingResearchInstructions(t *testing.T) {
+	payload := map[string]any{
+		"research_instructions": "Use current sources.",
+	}
+
+	if err := validateProgramPersistedPayloadFields("program create", payload, api.ProgramDetail{}); err == nil {
+		t.Fatal("expected missing research_instructions in API response to fail")
+	}
+}
+
+func TestValidateProgramPersistedPayloadFieldsAcceptsResearchInstructions(t *testing.T) {
+	payload := map[string]any{
+		"research_instructions": "Use current sources.",
+	}
+	program := api.ProgramDetail{
+		ResearchInstructions: ptr("Use current sources."),
+	}
+
+	if err := validateProgramPersistedPayloadFields("program create", payload, program); err != nil {
+		t.Fatalf("expected matching research_instructions to pass, got %v", err)
+	}
+}

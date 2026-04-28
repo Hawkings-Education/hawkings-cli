@@ -13,6 +13,47 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var programCreatePayloadFields = []string{
+	"remote_id",
+	"name",
+	"status",
+	"metadata",
+	"syllabus",
+	"syllabus_prompt",
+	"context",
+	"course_module_prompt_custom",
+	"research_instructions",
+	"enabled",
+	"language_id",
+	"course_faculty_id",
+	"course_program_template_id",
+	"relate",
+	"image",
+	"image_delete",
+	"image_generate",
+}
+
+var programUpdateOnlyPayloadFields = []string{
+	"remote_id",
+	"name",
+	"status",
+	"metadata",
+	"syllabus",
+	"syllabus_prompt",
+	"context",
+	"course_module_prompt_custom",
+	"research_instructions",
+	"course_faculty_id",
+	"course_program_template_id",
+	"language_id",
+}
+
+var programGenerateSyllabusPayloadFields = []string{
+	"context",
+	"syllabus_prompt",
+	"force",
+}
+
 func newProgramCreateCommand(opts *rootOptions) *cobra.Command {
 	var input jsonInputOptions
 	var syllabusFile string
@@ -30,6 +71,9 @@ func newProgramCreateCommand(opts *rootOptions) *cobra.Command {
 
 			payload, err := readJSONObject(input)
 			if err != nil {
+				return err
+			}
+			if err := validatePayloadFields("program create", payload, programCreatePayloadFields); err != nil {
 				return err
 			}
 			if syllabusFile != "" {
@@ -60,6 +104,9 @@ func newProgramCreateCommand(opts *rootOptions) *cobra.Command {
 				return err
 			}
 			program = normalizeProgramDetail(program)
+			if err := validateProgramPersistedPayloadFields("program create", payload, program); err != nil {
+				return err
+			}
 
 			response := map[string]any{
 				"program": program,
@@ -121,6 +168,9 @@ func newProgramUpdateCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := validatePayloadFields("program update", patch, programUpdateOnlyPayloadFields); err != nil {
+				return err
+			}
 
 			if dryRun {
 				return output.PrintJSON(map[string]any{
@@ -139,6 +189,9 @@ func newProgramUpdateCommand(opts *rootOptions) *cobra.Command {
 				return err
 			}
 			updated = normalizeProgramDetail(updated)
+			if err := validateProgramPersistedPayloadFields("program update", patch, updated); err != nil {
+				return err
+			}
 
 			if output.WantsJSON(rt.Format) {
 				return output.PrintJSON(updated)
@@ -518,6 +571,57 @@ func printProgramCoursesMutationResult(format output.Format, courses []api.Cours
 	return output.PrintTable([]string{"ID", "Remote ID", "Name", "Status"}, rows)
 }
 
+func validatePayloadFields(commandName string, payload map[string]any, allowedFields []string) error {
+	allowed := make(map[string]struct{}, len(allowedFields))
+	for _, field := range allowedFields {
+		allowed[field] = struct{}{}
+	}
+
+	unknown := make([]string, 0)
+	for field := range payload {
+		if _, ok := allowed[field]; !ok {
+			unknown = append(unknown, field)
+		}
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+
+	sort.Strings(unknown)
+	allowedSorted := append([]string(nil), allowedFields...)
+	sort.Strings(allowedSorted)
+
+	return fmt.Errorf(
+		"%s JSON payload contains unsupported field(s): %s; allowed fields: %s",
+		commandName,
+		strings.Join(unknown, ", "),
+		strings.Join(allowedSorted, ", "),
+	)
+}
+
+func validateProgramPersistedPayloadFields(commandName string, payload map[string]any, program api.ProgramDetail) error {
+	value, ok := payload["research_instructions"]
+	if !ok {
+		return nil
+	}
+
+	switch typed := value.(type) {
+	case nil:
+		if program.ResearchInstructions != nil {
+			return fmt.Errorf("%s sent research_instructions=null but API returned %q", commandName, *program.ResearchInstructions)
+		}
+	case string:
+		if program.ResearchInstructions == nil {
+			return fmt.Errorf("%s sent research_instructions but API response did not include it; refusing to report a successful write that may have been ignored", commandName)
+		}
+		if *program.ResearchInstructions != typed {
+			return fmt.Errorf("%s sent research_instructions=%q but API returned %q", commandName, typed, *program.ResearchInstructions)
+		}
+	}
+
+	return nil
+}
+
 type programCourseReorderPayload struct {
 	Selected []int
 	Order    map[int]int
@@ -779,6 +883,9 @@ func newProgramGenerateSyllabusCommand(opts *rootOptions) *cobra.Command {
 			if input.JSON != "" || input.JSONFile != "" {
 				payload, err = readJSONObject(input)
 				if err != nil {
+					return err
+				}
+				if err := validatePayloadFields("program generate-syllabus", payload, programGenerateSyllabusPayloadFields); err != nil {
 					return err
 				}
 			}

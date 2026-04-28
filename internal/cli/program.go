@@ -452,6 +452,7 @@ func newProgramConfigCommand(opts *rootOptions) *cobra.Command {
 				"context":                     stringPtrValue(program.Context),
 				"syllabus_prompt":             stringPtrValue(program.SyllabusPrompt),
 				"course_module_prompt_custom": stringPtrValue(program.CourseModulePromptCustom),
+				"research_instructions":       stringPtrValue(program.ResearchInstructions),
 			}
 
 			if output.WantsJSON(rt.Format) {
@@ -471,6 +472,7 @@ func newProgramConfigCommand(opts *rootOptions) *cobra.Command {
 				{"Context chars", intToString(len(stringPtrValue(program.Context)))},
 				{"Syllabus prompt chars", intToString(len(stringPtrValue(program.SyllabusPrompt)))},
 				{"Module prompt chars", intToString(len(stringPtrValue(program.CourseModulePromptCustom)))},
+				{"Research instructions chars", intToString(len(stringPtrValue(program.ResearchInstructions)))},
 			}
 			if err := output.PrintTable([]string{"Field", "Value"}, rows); err != nil {
 				return err
@@ -479,6 +481,7 @@ func newProgramConfigCommand(opts *rootOptions) *cobra.Command {
 			printOptionalBlock("Context", stringPtrValue(program.Context))
 			printOptionalBlock("Syllabus Prompt", stringPtrValue(program.SyllabusPrompt))
 			printOptionalBlock("Course Module Prompt Custom", stringPtrValue(program.CourseModulePromptCustom))
+			printOptionalBlock("Research Instructions", stringPtrValue(program.ResearchInstructions))
 			return nil
 		},
 	}

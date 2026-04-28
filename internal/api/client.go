@@ -128,19 +128,23 @@ type CourseDetail struct {
 }
 
 type ProgramSummary struct {
-	ID           int              `json:"id"`
-	Name         string           `json:"name"`
-	RemoteID     *string          `json:"remote_id"`
-	Enabled      bool             `json:"enabled"`
-	Status       *string          `json:"status"`
-	Syllabus     any              `json:"syllabus"`
-	CreatedAt    string           `json:"created_at"`
-	UpdatedAt    string           `json:"updated_at"`
-	Metadata     map[string]any   `json:"metadata"`
-	CoursesCount any              `json:"courses_count"`
-	Language     *Language        `json:"language"`
-	User         *UserSummary     `json:"user"`
-	Spaces       []map[string]any `json:"spaces"`
+	ID                       int              `json:"id"`
+	Name                     string           `json:"name"`
+	RemoteID                 *string          `json:"remote_id"`
+	Enabled                  bool             `json:"enabled"`
+	Status                   *string          `json:"status"`
+	Syllabus                 any              `json:"syllabus"`
+	SyllabusPrompt           *string          `json:"syllabus_prompt"`
+	CourseModulePromptCustom *string          `json:"course_module_prompt_custom"`
+	ResearchInstructions     *string          `json:"research_instructions"`
+	Context                  *string          `json:"context"`
+	CreatedAt                string           `json:"created_at"`
+	UpdatedAt                string           `json:"updated_at"`
+	Metadata                 map[string]any   `json:"metadata"`
+	CoursesCount             any              `json:"courses_count"`
+	Language                 *Language        `json:"language"`
+	User                     *UserSummary     `json:"user"`
+	Spaces                   []map[string]any `json:"spaces"`
 }
 
 type ProgramDetail struct {
@@ -150,6 +154,7 @@ type ProgramDetail struct {
 	Syllabus                 any              `json:"syllabus"`
 	SyllabusPrompt           *string          `json:"syllabus_prompt"`
 	CourseModulePromptCustom *string          `json:"course_module_prompt_custom"`
+	ResearchInstructions     *string          `json:"research_instructions"`
 	Context                  *string          `json:"context"`
 	RemoteID                 *string          `json:"remote_id"`
 	Enabled                  bool             `json:"enabled"`
