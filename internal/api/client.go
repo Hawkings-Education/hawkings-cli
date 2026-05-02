@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -82,6 +85,21 @@ type CourseContent struct {
 	File            map[string]any `json:"file"`
 }
 
+type Activity struct {
+	ID            int              `json:"id"`
+	UUID          string           `json:"uuid"`
+	Type          string           `json:"type"`
+	Title         string           `json:"title"`
+	Status        string           `json:"status"`
+	Description   string           `json:"description"`
+	CreatedAt     string           `json:"created_at"`
+	UpdatedAt     string           `json:"updated_at"`
+	Input         any              `json:"input"`
+	Content       any              `json:"content"`
+	Questions     []map[string]any `json:"questions"`
+	CourseModules []map[string]any `json:"course_modules"`
+}
+
 type CourseModule struct {
 	ID             int             `json:"id"`
 	Name           string          `json:"name"`
@@ -94,6 +112,7 @@ type CourseModule struct {
 	Enabled        bool            `json:"enabled"`
 	ApprovedAt     *string         `json:"approved_at"`
 	CourseContents []CourseContent `json:"course_contents"`
+	Activity       *Activity       `json:"activity"`
 }
 
 type CourseSection struct {
@@ -434,6 +453,15 @@ func (c *Client) GetCourseContent(ctx context.Context, id string, contents bool)
 	return content, nil
 }
 
+func (c *Client) GetActivity(ctx context.Context, id string, with []string) (Activity, error) {
+	var activity Activity
+	params := withValues(nil, with)
+	if err := c.getJSON(ctx, "/activity/"+id, params, &activity); err != nil {
+		return Activity{}, err
+	}
+	return activity, nil
+}
+
 func (c *Client) GetCourseModulesStatus(ctx context.Context, courseID string) (map[string]string, error) {
 	var statuses map[string]string
 	if err := c.getJSON(ctx, "/course/"+courseID+"/course-module/status", nil, &statuses); err != nil {
@@ -448,6 +476,23 @@ func (c *Client) CreateCourseBulk(ctx context.Context, payload map[string]any) (
 		return nil, err
 	}
 	return result, nil
+}
+
+func (c *Client) UploadCourseImage(ctx context.Context, id string, fields map[string]any, imagePath string) (CourseDetail, error) {
+	var course CourseDetail
+	if err := c.sendMultipart(ctx, http.MethodPatch, "/course/"+id, fields, "image", imagePath, &course); err != nil {
+		return CourseDetail{}, err
+	}
+	return course, nil
+}
+
+func (c *Client) GenerateCourseImage(ctx context.Context, id string, force bool) (CourseDetail, error) {
+	var course CourseDetail
+	payload := map[string]any{"force": force}
+	if err := c.sendJSON(ctx, http.MethodPost, "/course/"+id+"/image/generate", nil, payload, &course); err != nil {
+		return CourseDetail{}, err
+	}
+	return course, nil
 }
 
 func (c *Client) CreateScorm(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -490,12 +535,32 @@ func (c *Client) UpdateCourseContent(ctx context.Context, id string, payload map
 	return content, nil
 }
 
+func (c *Client) UpdateActivity(ctx context.Context, id string, payload map[string]any) (Activity, error) {
+	var activity Activity
+	if err := c.sendJSON(ctx, http.MethodPatch, "/activity/"+id, nil, payload, &activity); err != nil {
+		return Activity{}, err
+	}
+	return activity, nil
+}
+
+func (c *Client) DeleteCourseContent(ctx context.Context, id string) error {
+	return c.sendJSON(ctx, http.MethodDelete, "/course-content/"+id, nil, nil, nil)
+}
+
 func (c *Client) GenerateCourseModuleContent(ctx context.Context, id string, payload map[string]any) (map[string]any, error) {
 	var result map[string]any
 	if err := c.sendJSON(ctx, http.MethodPost, "/course-module/"+id+"/course-content/generate", nil, payload, &result); err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+func (c *Client) GenerateCourseModuleActivity(ctx context.Context, id string, payload map[string]any) (CourseModule, error) {
+	var module CourseModule
+	if err := c.sendJSON(ctx, http.MethodPost, "/course-module/"+id+"/activity/generate", nil, payload, &module); err != nil {
+		return CourseModule{}, err
+	}
+	return module, nil
 }
 
 func (c *Client) ApproveCourseModule(ctx context.Context, id string, approved bool) (CourseModule, error) {
@@ -537,6 +602,23 @@ func (c *Client) CreateProgram(ctx context.Context, payload map[string]any) (Pro
 func (c *Client) UpdateProgramOnly(ctx context.Context, id string, payload map[string]any) (ProgramDetail, error) {
 	var program ProgramDetail
 	if err := c.sendJSON(ctx, http.MethodPatch, "/course-program/"+id+"/only", nil, payload, &program); err != nil {
+		return ProgramDetail{}, err
+	}
+	return program, nil
+}
+
+func (c *Client) UploadProgramImage(ctx context.Context, id string, fields map[string]any, imagePath string) (ProgramDetail, error) {
+	var program ProgramDetail
+	if err := c.sendMultipart(ctx, http.MethodPatch, "/course-program/"+id, fields, "image", imagePath, &program); err != nil {
+		return ProgramDetail{}, err
+	}
+	return program, nil
+}
+
+func (c *Client) GenerateProgramImage(ctx context.Context, id string, force bool) (ProgramDetail, error) {
+	var program ProgramDetail
+	payload := map[string]any{"force": force}
+	if err := c.sendJSON(ctx, http.MethodPost, "/course-program/"+id+"/image/generate", nil, payload, &program); err != nil {
 		return ProgramDetail{}, err
 	}
 	return program, nil
@@ -633,6 +715,158 @@ func (c *Client) UpdateSpaceUsers(ctx context.Context, id string, payload map[st
 
 func (c *Client) DeleteSpace(ctx context.Context, id string) error {
 	return c.sendJSON(ctx, http.MethodDelete, "/space/"+id, nil, nil, nil)
+}
+
+func (c *Client) GenerateImage(ctx context.Context, payload map[string]any) (string, error) {
+	return c.sendForString(ctx, http.MethodPost, "/prompt/tool/image", nil, payload)
+}
+
+func (c *Client) sendForString(ctx context.Context, method, endpoint string, params url.Values, payload any) (string, error) {
+	urlStr := c.baseURL + endpoint
+	if params != nil && len(params) > 0 {
+		urlStr += "?" + params.Encode()
+	}
+
+	var body io.Reader
+	if payload != nil {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return "", fmt.Errorf("encode request body: %w", err)
+		}
+		body = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, urlStr, body)
+	if err != nil {
+		return "", fmt.Errorf("build request: %w", err)
+	}
+
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("x-api-key", c.xAPIKey)
+
+	client := &http.Client{Timeout: 0}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	if err != nil {
+		return "", fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", &APIError{
+			StatusCode: resp.StatusCode,
+			Body:       strings.TrimSpace(string(data)),
+		}
+	}
+
+	return strings.TrimSpace(string(data)), nil
+}
+
+func (c *Client) sendMultipart(ctx context.Context, method, endpoint string, fields map[string]any, fileField string, filePath string, out any) error {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	for key, value := range fields {
+		if value == nil {
+			continue
+		}
+		text, err := multipartFieldValue(value)
+		if err != nil {
+			return fmt.Errorf("encode multipart field %s: %w", key, err)
+		}
+		if err := writer.WriteField(key, text); err != nil {
+			return fmt.Errorf("write multipart field %s: %w", key, err)
+		}
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("open image file: %w", err)
+	}
+	defer file.Close()
+
+	part, err := writer.CreateFormFile(fileField, filepath.Base(filePath))
+	if err != nil {
+		return fmt.Errorf("create multipart image field: %w", err)
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return fmt.Errorf("copy image file: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("close multipart writer: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+endpoint, &body)
+	if err != nil {
+		return fmt.Errorf("build multipart request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("x-api-key", c.xAPIKey)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("execute multipart request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+		if err != nil {
+			return fmt.Errorf("read multipart error response: %w", err)
+		}
+		return &APIError{
+			StatusCode: resp.StatusCode,
+			Body:       strings.TrimSpace(string(data)),
+		}
+	}
+
+	if out == nil {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBytes))
+		return nil
+	}
+
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(out); err != nil {
+		return fmt.Errorf("decode multipart response: %w", err)
+	}
+	return nil
+}
+
+func multipartFieldValue(value any) (string, error) {
+	switch typed := value.(type) {
+	case string:
+		return typed, nil
+	case bool:
+		if typed {
+			return "true", nil
+		}
+		return "false", nil
+	case int:
+		return fmt.Sprintf("%d", typed), nil
+	case int32:
+		return fmt.Sprintf("%d", typed), nil
+	case int64:
+		return fmt.Sprintf("%d", typed), nil
+	case float32:
+		return fmt.Sprintf("%v", typed), nil
+	case float64:
+		return fmt.Sprintf("%v", typed), nil
+	case json.Number:
+		return typed.String(), nil
+	default:
+		data, err := json.Marshal(typed)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	}
 }
 
 func (c *Client) getJSON(ctx context.Context, endpoint string, params url.Values, out any) error {

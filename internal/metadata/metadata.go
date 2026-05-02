@@ -228,6 +228,8 @@ func EntitiesCatalog() []Entity {
 				"program remove-course",
 				"program generate-syllabus",
 				"program create-courses",
+				"program image generate",
+				"program image upload",
 				"program list",
 				"program get",
 				"program tree",
@@ -262,6 +264,8 @@ func EntitiesCatalog() []Entity {
 			Commands: []string{
 				"course list",
 				"course create",
+				"course image generate",
+				"course image upload",
 				"course get",
 				"course sections",
 				"course modules",
@@ -312,22 +316,26 @@ func EntitiesCatalog() []Entity {
 			Summary:  "Unidad de aprendizaje, actividad o referencia.",
 			Endpoint: "/course-module/{id}",
 			Parent:   "course|section",
-			Children: []string{"content"},
+			Children: []string{"content", "activity"},
 			KeyFields: []string{
-				"id", "name", "type", "order", "status", "metadata", "course_contents",
+				"id", "name", "type", "order", "status", "metadata", "course_contents", "activity",
 			},
 			Expanders: []string{
 				"courseContents",
+				"activity",
 			},
 			Commands: []string{
 				"course modules",
 				"module create",
 				"module get",
 				"module content",
+				"module activity",
 				"module set-content",
+				"module set-activity",
 				"module update",
 				"module patch",
 				"module generate-content",
+				"module generate-activity",
 				"module approve",
 			},
 			Notes: []string{
@@ -335,6 +343,30 @@ func EntitiesCatalog() []Entity {
 				"module content hace la lectura de file.contents con truncado por defecto.",
 				"module create calcula order automaticamente cuando no se le pasa.",
 				"module set-content permite escribir markdown manual sin pasar por el generador de contenido del modulo.",
+				"module activity y module set-activity leen y actualizan la activity asociada a modulos type=activity.",
+			},
+		},
+		{
+			Name:     "activity",
+			Summary:  "Actividad estructurada asociada a un module type=activity.",
+			Endpoint: "/activity/{uuid|id}",
+			Parent:   "module",
+			KeyFields: []string{
+				"id", "uuid", "type", "title", "status", "description", "content",
+			},
+			Expanders: []string{
+				"activityQuestions",
+				"courseModules",
+			},
+			Commands: []string{
+				"module activity",
+				"module set-activity",
+				"module generate-activity",
+				"section generate-activities",
+			},
+			Notes: []string{
+				"El module expone la relation singular activity con with[]=activity.",
+				"PATCH /activity/{uuid|id} exige title, description y content; el CLI lee la activity actual para preservar los campos omitidos.",
 			},
 		},
 		{
@@ -349,6 +381,7 @@ func EntitiesCatalog() []Entity {
 				"module content",
 				"module set-content",
 				"content approve",
+				"content delete",
 			},
 			Notes: []string{
 				"El texto grande suele vivir en file.contents y puede ocupar miles de caracteres.",
@@ -686,6 +719,37 @@ func CommandsCatalog() []Command {
 			},
 		},
 		{
+			Path:         "program image generate",
+			Summary:      "Genera con IA la imagen de portada de un program.",
+			Method:       "POST",
+			Endpoint:     "/course-program/{id}/image/generate",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--force", Type: "bool", Description: "Regenera aunque el program ya tenga imagen."},
+				{Name: "--dry-run", Type: "bool", Description: "Muestra la operacion sin enviar peticiones."},
+			},
+			Notes: []string{
+				"Esta opcion pide al backend generar la portada con IA; no sube ningun archivo local.",
+			},
+		},
+		{
+			Path:         "program image upload",
+			Summary:      "Sube manualmente un JPG o PNG como imagen de portada de un program.",
+			Method:       "PATCH",
+			Endpoint:     "/course-program/{id}",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--file", Type: "string", Description: "Ruta a un archivo .jpg, .jpeg o .png."},
+				{Name: "--dry-run", Type: "bool", Description: "Muestra la operacion sin subir el archivo."},
+			},
+			Notes: []string{
+				"Esta opcion envia multipart/form-data con el archivo en el campo image.",
+				"El CLI lee primero el program actual para preservar sus campos al hacer PATCH.",
+			},
+		},
+		{
 			Path:         "program list",
 			Summary:      "Lista los programas visibles para el usuario segun rol y plataforma.",
 			Method:       "GET",
@@ -813,6 +877,40 @@ func CommandsCatalog() []Command {
 			},
 		},
 		{
+			Path:         "course image generate",
+			Summary:      "Genera con IA la imagen de portada de un course.",
+			Method:       "POST",
+			Endpoint:     "/course/{id}/image/generate",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--force", Type: "bool", Description: "Regenera aunque el course ya tenga imagen."},
+				{Name: "--dry-run", Type: "bool", Description: "Muestra la operacion sin enviar peticiones."},
+			},
+			Notes: []string{
+				"Esta opcion pide al backend generar la portada con IA; no sube ningun archivo local.",
+			},
+		},
+		{
+			Path:         "course image upload",
+			Summary:      "Sube manualmente un JPG o PNG como imagen de portada de un course.",
+			Method:       "PATCH",
+			Endpoint:     "/course/{id}",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--file", Type: "string", Description: "Ruta a un archivo .jpg, .jpeg o .png."},
+				{Name: "--json", Type: "string", Description: "Payload JSON inline con los campos de update que se deben preservar."},
+				{Name: "--json-file", Type: "string", Description: "Ruta a un JSON con los campos de update que se deben preservar."},
+				{Name: "--dry-run", Type: "bool", Description: "Muestra la operacion sin subir el archivo."},
+			},
+			Notes: []string{
+				"Esta opcion envia multipart/form-data con el archivo en el campo image.",
+				"El PATCH normal de course puede tocar campos que course get no devuelve; por eso el CLI exige --json o --json-file.",
+				"El payload debe incluir al menos name y language_id, y tambien cualquier campo del course que quieras preservar.",
+			},
+		},
+		{
 			Path:         "scorm create",
 			Summary:      "Crea un recurso SCORM con payload JSON saneado antes de POST /scorm.",
 			Method:       "POST",
@@ -918,6 +1016,24 @@ func CommandsCatalog() []Command {
 			},
 		},
 		{
+			Path:         "module activity",
+			Summary:      "Lee la activity asociada a un module type=activity.",
+			Method:       "GET + GET",
+			Endpoint:     "/course-module/{id}?with[]=activity + /activity/{uuid|id}",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--raw-content", Type: "bool", Description: "Imprime solo activity.content como JSON."},
+				{Name: "--questions", Type: "bool", Description: "Incluye activityQuestions en la lectura detallada."},
+				{Name: "--course-modules", Type: "bool", Description: "Incluye courseModules relacionados en la activity."},
+				{Name: "--max-chars", Type: "int", Description: "Maximo de caracteres de activity.content en salida table."},
+				{Name: "--full", Type: "bool", Description: "No trunca activity.content en salida table."},
+			},
+			Notes: []string{
+				"Primero lee el module con with[]=activity para resolver el uuid/id de la activity.",
+			},
+		},
+		{
 			Path:         "module create",
 			Summary:      "Crea un module nuevo a nivel course o section y resuelve order automaticamente si no se indica.",
 			Method:       "POST",
@@ -969,6 +1085,25 @@ func CommandsCatalog() []Command {
 			},
 		},
 		{
+			Path:         "module set-activity",
+			Summary:      "Actualiza la activity asociada a un module type=activity.",
+			Method:       "GET + GET + PATCH",
+			Endpoint:     "/course-module/{id}?with[]=activity + /activity/{uuid|id}",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--json", Type: "string", Description: "Patch JSON inline con title, description y/o content."},
+				{Name: "--json-file", Type: "string", Description: "Ruta a un fichero JSON con el patch."},
+				{Name: "--title", Type: "string", Description: "Nuevo title de la activity."},
+				{Name: "--description", Type: "string", Description: "Nueva description de la activity."},
+				{Name: "--dry-run", Type: "bool", Description: "Muestra el payload resuelto sin enviar el PATCH."},
+			},
+			Notes: []string{
+				"El payload puede ser parcial; el CLI completa title, description y content desde la activity actual.",
+				"El backend valida content segun el type de la activity.",
+			},
+		},
+		{
 			Path:         "content approve",
 			Summary:      "Aprueba o desaprueba el contenido de un module usando approved_at del course-module.",
 			Method:       "PATCH",
@@ -982,6 +1117,20 @@ func CommandsCatalog() []Command {
 			Notes: []string{
 				"Es un alias semantico de module approve.",
 				"En Hawkings, el estado de aprobacion del contenido vive en approved_at del module.",
+			},
+		},
+		{
+			Path:         "content delete",
+			Summary:      "Elimina un course-content por ID.",
+			Method:       "DELETE",
+			Endpoint:     "/course-content/{id}",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--dry-run", Type: "bool", Description: "Muestra la operacion sin enviar peticiones."},
+			},
+			Notes: []string{
+				"El argumento content-id debe ser un entero positivo.",
 			},
 		},
 		{
@@ -1028,6 +1177,24 @@ func CommandsCatalog() []Command {
 				{Name: "--research-id", Type: "intSlice", Description: "IDs de research existentes a reutilizar."},
 				{Name: "--prompt-custom", Type: "string", Description: "Instrucciones de redaccion para este modulo."},
 				{Name: "--dry-run", Type: "bool", Description: "Muestra el payload sin enviar peticiones."},
+			},
+		},
+		{
+			Path:         "module generate-activity",
+			Summary:      "Lanza la generacion asincrona de la activity de un module type=activity.",
+			Method:       "POST",
+			Endpoint:     "/course-module/{id}/activity/generate",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--async", Type: "bool", Description: "Genera en background; usa --async=false para esperar."},
+				{Name: "--priority", Type: "string", Description: "Prioridad opcional; el backend acepta low."},
+				{Name: "--force", Type: "bool", Description: "Fuerza la generacion si el module esta procesando."},
+				{Name: "--cache", Type: "bool", Description: "Controla la cache de generacion; solo se envia si pasas este flag."},
+				{Name: "--dry-run", Type: "bool", Description: "Muestra el payload sin enviar peticiones."},
+			},
+			Notes: []string{
+				"El backend exige que el module sea type=activity y que metadata.activity.type exista.",
 			},
 		},
 		{

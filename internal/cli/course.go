@@ -19,6 +19,7 @@ func newCourseCommand(opts *rootOptions) *cobra.Command {
 	}
 	cmd.AddCommand(newCourseListCommand(opts))
 	cmd.AddCommand(newCourseCreateCommand(opts))
+	cmd.AddCommand(newCourseImageCommand(opts))
 	cmd.AddCommand(newCourseGetCommand(opts))
 	cmd.AddCommand(newCourseSectionsCommand(opts))
 	cmd.AddCommand(newCourseModulesCommand(opts))
@@ -325,6 +326,7 @@ func newCourseGetCommand(opts *rootOptions) *cobra.Command {
 				{"Name", course.Name},
 				{"Status", stringPtrOrDash(course.Status)},
 				{"Remote ID", stringPtrOrDash(course.RemoteID)},
+				{"Image", stringPtrOrDash(course.Image)},
 				{"Language", valueOrDash(languageLabel(course.Language))},
 				{"Sections", intToString(len(course.CourseSections))},
 				{"Modules", intToString(courseAllModuleCount(course))},

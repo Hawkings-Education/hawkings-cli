@@ -65,6 +65,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(newSectionCommand(opts))
 	cmd.AddCommand(newModuleCommand(opts))
 	cmd.AddCommand(newContentCommand(opts))
+	cmd.AddCommand(newPromptCommand(opts))
 	cmd.AddCommand(newDescribeCommand(opts))
 
 	return cmd

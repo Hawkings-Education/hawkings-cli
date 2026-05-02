@@ -193,10 +193,49 @@ hawkings program create-courses 410 --force
 hawkings --timeout 300s program create-courses 410
 ```
 
+Gestionar la portada de un programa:
+
+```bash
+# Generar portada con IA
+hawkings program image generate 410
+hawkings program image generate 410 --force
+
+# Subir portada manual en JPG o PNG
+hawkings program image upload 410 --file ./cover.png
+```
+
+Gestionar la portada de un curso:
+
+```bash
+# Generar portada con IA
+hawkings course image generate 35572
+hawkings course image generate 35572 --force
+
+# Subir portada manual en JPG o PNG.
+# Course usa PATCH /course/{id}; pasa un payload completo con los campos que quieras preservar.
+hawkings course image upload 35572 --file ./cover.jpg --json-file ./course-update.json
+```
+
 Escribir contenido manual en un modulo:
 
 ```bash
 hawkings module set-content 22598 --content-file ./tema1.md
+```
+
+Leer y actualizar la activity de un modulo tipo `activity`:
+
+```bash
+hawkings module generate-activity 22599
+hawkings module activity 22599 --output json
+hawkings module set-activity 22599 --json '{"content":{"markdown":"Nueva actividad"}}'
+hawkings module set-activity 22599 --title "Actividad práctica" --json-file ./activity-patch.json
+```
+
+Eliminar un course-content:
+
+```bash
+hawkings content delete 12345
+hawkings content delete 12345 --dry-run
 ```
 
 ## Descubrir el CLI
@@ -217,6 +256,9 @@ hawkings describe command "course create"
 - `program list` acepta `--order-column` y `--order-mode`; por ejemplo `status;name` con `completed,processed,courses-created;ASC`.
 - Para reutilizar cursos existentes: `hawkings course list --all` para descubrir IDs y luego `hawkings program add-course <program-id> --course <course-id>`.
 - `course create --program` crea el curso via `/course/bulk` y luego lo relaciona con `POST /course-program/{id}/course`.
+- `program image generate` y `course image generate` piden al backend generar la portada con IA.
+- `program image upload` y `course image upload` suben manualmente una portada `jpg`, `jpeg` o `png` como multipart en el campo `image`.
+- `course image upload` exige `--json` o `--json-file` porque el endpoint `PATCH /course/{id}` no es parcial para todos los campos; incluye en ese payload los campos del course que quieras conservar.
 - `scorm create` sanea el payload y no envia `user_id` ni `language_id`.
 - `module content` trunca por defecto para no saturar contexto. Usa `--full` si quieres el cuerpo completo.
 - `module update` y `module patch` son equivalentes.

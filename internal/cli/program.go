@@ -30,6 +30,7 @@ func newProgramCommand(opts *rootOptions) *cobra.Command {
 	cmd.AddCommand(newProgramRemoveCourseCommand(opts))
 	cmd.AddCommand(newProgramGenerateSyllabusCommand(opts))
 	cmd.AddCommand(newProgramCreateCoursesCommand(opts))
+	cmd.AddCommand(newProgramImageCommand(opts))
 	cmd.AddCommand(newProgramGetCommand(opts))
 	cmd.AddCommand(newProgramTreeCommand(opts))
 	cmd.AddCommand(newProgramSyllabusCommand(opts))
@@ -215,6 +216,7 @@ func newProgramGetCommand(opts *rootOptions) *cobra.Command {
 				{"Status", stringPtrOrDash(program.Status)},
 				{"Enabled", boolToYesNo(program.Enabled)},
 				{"Remote ID", stringPtrOrDash(program.RemoteID)},
+				{"Image", stringPtrOrDash(program.Image)},
 				{"Code", valueOrDash(metadataString(program.Metadata, "code"))},
 				{"Hours", valueOrDash(metadataString(program.Metadata, "hours"))},
 				{"Template", valueOrDash(mapString(program.CourseProgramTemplate, "name"))},

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,10 +22,13 @@ func newModuleCommand(opts *rootOptions) *cobra.Command {
 	}
 	cmd.AddCommand(newModuleGetCommand(opts))
 	cmd.AddCommand(newModuleContentCommand(opts))
+	cmd.AddCommand(newModuleActivityCommand(opts))
 	cmd.AddCommand(newModuleCreateCommand(opts))
 	cmd.AddCommand(newModuleSetContentCommand(opts))
+	cmd.AddCommand(newModuleSetActivityCommand(opts))
 	cmd.AddCommand(newModulePatchCommand(opts))
 	cmd.AddCommand(newModuleGenerateContentCommand(opts))
+	cmd.AddCommand(newModuleGenerateActivityCommand(opts))
 	cmd.AddCommand(newModuleApproveCommand(opts))
 	return cmd
 }
@@ -45,7 +49,7 @@ func newModuleGetCommand(opts *rootOptions) *cobra.Command {
 			ctx, cancel := commandContext(rt)
 			defer cancel()
 
-			module, err := rt.Client.GetCourseModule(ctx, args[0], []string{"courseContents"}, contents)
+			module, err := rt.Client.GetCourseModule(ctx, args[0], []string{"courseContents", "activity"}, contents)
 			if err != nil {
 				return err
 			}
@@ -62,6 +66,14 @@ func newModuleGetCommand(opts *rootOptions) *cobra.Command {
 				{"Order", intToString(module.Order)},
 				{"Approved At", stringPtrOrDash(module.ApprovedAt)},
 				{"Contents", intToString(len(module.CourseContents))},
+			}
+			if module.Activity != nil {
+				rows = append(rows,
+					[]string{"Activity ID", intToString(module.Activity.ID)},
+					[]string{"Activity UUID", valueOrDash(module.Activity.UUID)},
+					[]string{"Activity Type", valueOrDash(module.Activity.Type)},
+					[]string{"Activity Status", valueOrDash(module.Activity.Status)},
+				)
 			}
 			if err := output.PrintTable([]string{"Field", "Value"}, rows); err != nil {
 				return err
@@ -276,6 +288,92 @@ func newModuleContentCommand(opts *rootOptions) *cobra.Command {
 	return command
 }
 
+func newModuleActivityCommand(opts *rootOptions) *cobra.Command {
+	var rawContent bool
+	var questions bool
+	var courseModules bool
+	var maxChars int
+	var full bool
+
+	command := &cobra.Command{
+		Use:   "activity <module-id>",
+		Short: "Lee la activity asociada a un module de tipo activity",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rt, err := buildRuntime(opts, true)
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel := commandContext(rt)
+			defer cancel()
+
+			module, activity, err := getModuleActivityDetail(ctx, rt.Client, args[0], activityDetailWith(questions, courseModules))
+			if err != nil {
+				return err
+			}
+
+			if rawContent {
+				return output.PrintJSON(activity.Content)
+			}
+
+			if output.WantsJSON(rt.Format) {
+				return output.PrintJSON(map[string]any{
+					"module": map[string]any{
+						"id":     module.ID,
+						"name":   module.Name,
+						"type":   module.Type,
+						"status": normalizedStatus(module.Status),
+					},
+					"activity": activity,
+				})
+			}
+
+			contentJSON, contentChars := activityContentString(activity.Content)
+			contentPreview := contentJSON
+			truncated := false
+			if !full {
+				contentPreview, truncated, contentChars = truncateText(contentJSON, maxChars)
+			}
+
+			rows := [][]string{
+				{"Module ID", intToString(module.ID)},
+				{"Module Name", module.Name},
+				{"Module Type", module.Type},
+				{"Module Status", normalizedStatus(module.Status)},
+				{"Activity ID", intToString(activity.ID)},
+				{"Activity UUID", valueOrDash(activity.UUID)},
+				{"Activity Type", valueOrDash(activity.Type)},
+				{"Activity Title", activity.Title},
+				{"Activity Status", valueOrDash(activity.Status)},
+				{"Description", activity.Description},
+				{"Content chars", intToString(contentChars)},
+				{"Truncated", boolToYesNo(truncated)},
+			}
+			if err := output.PrintTable([]string{"Field", "Value"}, rows); err != nil {
+				return err
+			}
+			if contentPreview != "" {
+				writeLine("")
+				writeLine("Content:")
+				writeLine("%s", contentPreview)
+				if truncated {
+					writeLine("")
+					writeLine("Truncated at %d chars. Repite con --full o sube --max-chars.", maxChars)
+				}
+			}
+			return nil
+		},
+	}
+
+	command.Flags().BoolVar(&rawContent, "raw-content", false, "Imprime solo activity.content como JSON")
+	command.Flags().BoolVar(&questions, "questions", false, "Incluye activityQuestions en la lectura de la activity")
+	command.Flags().BoolVar(&courseModules, "course-modules", false, "Incluye los courseModules relacionados en la activity")
+	command.Flags().IntVar(&maxChars, "max-chars", 2000, "Maximo de caracteres de activity.content cuando no se usa --full")
+	command.Flags().BoolVar(&full, "full", false, "Devuelve el content completo en salida table")
+	return command
+}
+
 func newModuleCreateCommand(opts *rootOptions) *cobra.Command {
 	var moduleType string
 	var name string
@@ -372,8 +470,9 @@ Reglas:
 					"scope":     scope,
 					"parent_id": parentID,
 					"resolved": map[string]any{
-						"course_id": anyResolvedValue(scope == "course", resolvedCourseID, "from section at runtime"),
-						"order":     anyResolvedValue(resolvedOrder != 0, resolvedOrder, "auto (next order in selected scope)"),
+						"course_id":            anyResolvedValue(scope == "course", resolvedCourseID, "from section at runtime"),
+						"learning_platform_id": "from active platform at runtime",
+						"order":                anyResolvedValue(resolvedOrder != 0, resolvedOrder, "auto (next order in selected scope)"),
 					},
 					"payload": payload,
 					"notes": []string{
@@ -409,7 +508,13 @@ Reglas:
 				resolvedOrder = nextModuleOrder(course.CourseModules)
 			}
 
+			learningPlatformID, err := resolveActiveLearningPlatformID(ctx, rt)
+			if err != nil {
+				return err
+			}
+
 			payload["course_id"] = resolvedCourseID
+			payload["learning_platform_id"] = learningPlatformID
 			payload["order"] = resolvedOrder
 
 			module, err := rt.Client.CreateCourseModule(ctx, payload)
@@ -419,11 +524,11 @@ Reglas:
 
 			if output.WantsJSON(rt.Format) {
 				return output.PrintJSON(map[string]any{
-					"action":        "module create",
-					"scope":         scope,
-					"parent_id":     parentID,
+					"action":         "module create",
+					"scope":          scope,
+					"parent_id":      parentID,
 					"resolved_order": resolvedOrder,
-					"module":        module,
+					"module":         module,
 				})
 			}
 
@@ -436,6 +541,7 @@ Reglas:
 				{"Scope", scope},
 				{"Parent ID", intToString(parentID)},
 				{"Course ID", intToString(resolvedCourseID)},
+				{"Learning Platform ID", intToString(learningPlatformID)},
 			}
 			if err := output.PrintTable([]string{"Field", "Value"}, rows); err != nil {
 				return err
@@ -504,12 +610,12 @@ Importante:
 
 			if dryRun {
 				return output.PrintJSON(map[string]any{
-					"action":      "module set-content",
-					"module_id":   args[0],
-					"content_id":  contentID,
-					"input":       source,
-					"name":        name,
-					"mime":        resolvedModuleContentMime(mime, filePath),
+					"action":     "module set-content",
+					"module_id":  args[0],
+					"content_id": contentID,
+					"input":      source,
+					"name":       name,
+					"mime":       resolvedModuleContentMime(mime, filePath),
 					"content": map[string]any{
 						"type":    "markdown",
 						"status":  defaultString(contentStatus, "processed"),
@@ -615,9 +721,9 @@ Importante:
 				"content_action": contentAction,
 				"source":         source,
 				"module": map[string]any{
-					"id":             module.ID,
-					"name":           module.Name,
-					"type":           module.Type,
+					"id":              module.ID,
+					"name":            module.Name,
+					"type":            module.Type,
 					"previous_status": normalizedStatus(module.Status),
 				},
 				"content": map[string]any{
@@ -681,6 +787,129 @@ Importante:
 	return command
 }
 
+func newModuleSetActivityCommand(opts *rootOptions) *cobra.Command {
+	var input jsonInputOptions
+	var title string
+	var description string
+	var dryRun bool
+
+	command := &cobra.Command{
+		Use:   "set-activity <module-id>",
+		Short: "Actualiza la activity asociada a un module de tipo activity",
+		Long: strings.TrimSpace(`
+Actualiza una activity existente via PATCH /activity/{uuid}.
+
+El payload puede ser parcial:
+- --json '{"content": {...}}' actualiza content y conserva title/description actuales.
+- --title o --description sobrescriben esos campos.
+- El backend exige title, description y content, por eso el CLI lee primero la activity actual y completa lo que falte.
+`),
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rt, err := buildRuntime(opts, true)
+			if err != nil {
+				return err
+			}
+
+			patch, err := readOptionalJSONObject(input)
+			if err != nil {
+				return err
+			}
+			if patch == nil {
+				patch = map[string]any{}
+			}
+			if strings.TrimSpace(title) != "" {
+				patch["title"] = strings.TrimSpace(title)
+			}
+			if strings.TrimSpace(description) != "" {
+				patch["description"] = strings.TrimSpace(description)
+			}
+			if len(patch) == 0 {
+				return fmt.Errorf("missing activity update; use --json, --json-file, --title or --description")
+			}
+
+			ctx, cancel := commandContext(rt)
+			defer cancel()
+
+			module, current, err := getModuleActivityDetail(ctx, rt.Client, args[0], nil)
+			if err != nil {
+				return err
+			}
+
+			payload := map[string]any{
+				"title":       firstNonEmpty(anyString(patch["title"]), current.Title),
+				"description": firstNonEmpty(anyString(patch["description"]), current.Description),
+				"content":     current.Content,
+			}
+			if content, ok := patch["content"]; ok {
+				payload["content"] = content
+			}
+			if payload["title"] == "" {
+				return fmt.Errorf("activity title is required; pass --title or include title in --json")
+			}
+			if payload["description"] == "" {
+				return fmt.Errorf("activity description is required; pass --description or include description in --json")
+			}
+			if payload["content"] == nil {
+				return fmt.Errorf("activity content is required; include content in --json or ensure current activity has content")
+			}
+
+			activityID := activityRef(current)
+			if dryRun {
+				return output.PrintJSON(map[string]any{
+					"action":      "module set-activity",
+					"module_id":   module.ID,
+					"activity_id": activityID,
+					"payload":     payload,
+					"endpoint":    "/activity/" + activityID,
+					"method":      "PATCH",
+					"notes": []string{
+						"dry-run lee module y activity para completar campos requeridos, pero no actualiza",
+						"PATCH /activity exige title, description y content",
+					},
+				})
+			}
+
+			updated, err := rt.Client.UpdateActivity(ctx, activityID, payload)
+			if err != nil {
+				return err
+			}
+
+			result := map[string]any{
+				"action": "module set-activity",
+				"module": map[string]any{
+					"id":     module.ID,
+					"name":   module.Name,
+					"type":   module.Type,
+					"status": normalizedStatus(module.Status),
+				},
+				"activity": updated,
+			}
+			if output.WantsJSON(rt.Format) {
+				return output.PrintJSON(result)
+			}
+
+			rows := [][]string{
+				{"Module ID", intToString(module.ID)},
+				{"Module Name", module.Name},
+				{"Module Type", module.Type},
+				{"Activity ID", intToString(updated.ID)},
+				{"Activity UUID", valueOrDash(updated.UUID)},
+				{"Activity Type", valueOrDash(updated.Type)},
+				{"Activity Title", updated.Title},
+				{"Activity Status", valueOrDash(updated.Status)},
+			}
+			return output.PrintTable([]string{"Field", "Value"}, rows)
+		},
+	}
+
+	addJSONInputFlags(command, &input)
+	command.Flags().StringVar(&title, "title", "", "Nuevo title de la activity")
+	command.Flags().StringVar(&description, "description", "", "Nueva description de la activity")
+	command.Flags().BoolVar(&dryRun, "dry-run", false, "Muestra el payload resuelto sin enviar el PATCH")
+	return command
+}
+
 func newModulePatchCommand(opts *rootOptions) *cobra.Command {
 	var input jsonInputOptions
 	var dryRun bool
@@ -689,7 +918,7 @@ func newModulePatchCommand(opts *rootOptions) *cobra.Command {
 		Use:     "patch <module-id>",
 		Aliases: []string{"update"},
 		Short:   "Hace PATCH /only sobre un module con los campos enviados",
-		Args:  cobra.ExactArgs(1),
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rt, err := buildRuntime(opts, true)
 			if err != nil {
@@ -791,6 +1020,88 @@ func newModuleGenerateContentCommand(opts *rootOptions) *cobra.Command {
 	return command
 }
 
+func newModuleGenerateActivityCommand(opts *rootOptions) *cobra.Command {
+	var async bool
+	var priority string
+	var force bool
+	var cache bool
+	var dryRun bool
+
+	command := &cobra.Command{
+		Use:   "generate-activity <module-id>",
+		Short: "Lanza la generacion asincrona de la activity de un module",
+		Long: strings.TrimSpace(`
+Llama a POST /course-module/{id}/activity/generate.
+
+El backend exige que el module sea type=activity y que metadata.activity.type exista.
+`),
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rt, err := buildRuntime(opts, true)
+			if err != nil {
+				return err
+			}
+
+			payload := map[string]any{
+				"async": async,
+				"force": force,
+			}
+			if strings.TrimSpace(priority) != "" {
+				payload["priority"] = strings.TrimSpace(priority)
+			}
+			if cmd.Flags().Changed("cache") {
+				payload["cache"] = cache
+			}
+
+			if dryRun {
+				return output.PrintJSON(map[string]any{
+					"action":    "module generate-activity",
+					"module_id": args[0],
+					"payload":   payload,
+					"endpoint":  "/course-module/" + args[0] + "/activity/generate",
+					"method":    "POST",
+				})
+			}
+
+			ctx, cancel := commandContext(rt)
+			defer cancel()
+
+			module, err := rt.Client.GenerateCourseModuleActivity(ctx, args[0], payload)
+			if err != nil {
+				return err
+			}
+
+			if output.WantsJSON(rt.Format) {
+				return output.PrintJSON(module)
+			}
+
+			rows := [][]string{
+				{"ID", intToString(module.ID)},
+				{"Name", module.Name},
+				{"Type", module.Type},
+				{"Status", stringPtrOrDash(module.Status)},
+				{"Activity ID", ""},
+			}
+			if module.Activity != nil {
+				rows[len(rows)-1][1] = intToString(module.Activity.ID)
+				rows = append(rows,
+					[]string{"Activity UUID", valueOrDash(module.Activity.UUID)},
+					[]string{"Activity Type", valueOrDash(module.Activity.Type)},
+					[]string{"Activity Status", valueOrDash(module.Activity.Status)},
+				)
+			}
+			return output.PrintTable([]string{"Field", "Value"}, rows)
+		},
+	}
+
+	command.Flags().BoolVar(&async, "async", true, "Genera en background; usa --async=false para esperar a la generacion")
+	command.Flags().StringVar(&priority, "priority", "", "Prioridad opcional; el backend acepta low")
+	command.Flags().BoolVar(&force, "force", false, "Regenera aunque el module no este vacio o ya este procesando")
+	command.Flags().BoolVar(&cache, "cache", false, "Controla la cache de generacion; solo se envia si pasas este flag")
+	command.Flags().BoolVar(&dryRun, "dry-run", false, "Muestra el payload sin enviar peticiones")
+	return command
+}
+
 func newModuleApproveCommand(opts *rootOptions) *cobra.Command {
 	var approved bool
 	var dryRun bool
@@ -847,6 +1158,71 @@ func approveModuleContent(ctx context.Context, client *api.Client, id string, ap
 		return api.CourseModule{}, err
 	}
 	return client.GetCourseModule(ctx, id, []string{"courseContents"}, false)
+}
+
+func getModuleActivityDetail(ctx context.Context, client *api.Client, moduleID string, with []string) (api.CourseModule, api.Activity, error) {
+	module, err := client.GetCourseModule(ctx, moduleID, []string{"activity"}, false)
+	if err != nil {
+		return api.CourseModule{}, api.Activity{}, err
+	}
+	if module.Activity == nil {
+		return api.CourseModule{}, api.Activity{}, fmt.Errorf("module %s has no activity relation; expected a module type activity with with[]=activity", moduleID)
+	}
+
+	ref := activityRef(*module.Activity)
+	if ref == "" {
+		return api.CourseModule{}, api.Activity{}, fmt.Errorf("module %s activity has no id or uuid", moduleID)
+	}
+
+	activity, err := client.GetActivity(ctx, ref, with)
+	if err != nil {
+		return api.CourseModule{}, api.Activity{}, err
+	}
+	return module, activity, nil
+}
+
+func activityRef(activity api.Activity) string {
+	if strings.TrimSpace(activity.UUID) != "" {
+		return strings.TrimSpace(activity.UUID)
+	}
+	if activity.ID != 0 {
+		return intToString(activity.ID)
+	}
+	return ""
+}
+
+func activityDetailWith(questions, courseModules bool) []string {
+	with := []string{}
+	if questions {
+		with = append(with, "activityQuestions")
+	}
+	if courseModules {
+		with = append(with, "courseModules")
+	}
+	return with
+}
+
+func activityContentString(content any) (string, int) {
+	if content == nil {
+		return "", 0
+	}
+	data, err := json.MarshalIndent(content, "", "  ")
+	if err != nil {
+		text := fmt.Sprintf("%v", content)
+		return text, utf8.RuneCountInString(text)
+	}
+	text := string(data)
+	return text, utf8.RuneCountInString(text)
+}
+
+func anyString(value any) string {
+	if value == nil {
+		return ""
+	}
+	if text, ok := value.(string); ok {
+		return strings.TrimSpace(text)
+	}
+	return strings.TrimSpace(fmt.Sprintf("%v", value))
 }
 
 func selectCourseContent(contents []api.CourseContent, contentID int) (api.CourseContent, error) {
@@ -938,4 +1314,47 @@ func nextModuleOrder(modules []api.CourseModule) int {
 		}
 	}
 	return maxOrder + 1
+}
+
+func resolveActiveLearningPlatformID(ctx context.Context, rt *runtime) (int, error) {
+	profile, err := rt.Client.GetProfile(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("resolve active learning platform: %w", err)
+	}
+
+	if id, ok := activeLearningPlatformID(profile, nil, rt.Config.PlatformUUID); ok {
+		return id, nil
+	}
+
+	platformUUID := strings.TrimSpace(rt.Config.PlatformUUID)
+	if platformUUID != "" {
+		platforms, err := rt.Client.GetPlatforms(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("resolve active learning platform by UUID: %w", err)
+		}
+		if id, ok := activeLearningPlatformID(profile, platforms, platformUUID); ok {
+			return id, nil
+		}
+	}
+
+	return 0, fmt.Errorf("active learning platform ID could not be resolved; run `hawkings auth whoami --output json` or check the active profile")
+}
+
+func activeLearningPlatformID(profile api.Profile, platforms []api.LearningPlatform, platformUUID string) (int, bool) {
+	if profile.LearningPlatform != nil && profile.LearningPlatform.ID != 0 {
+		return profile.LearningPlatform.ID, true
+	}
+
+	platformUUID = strings.TrimSpace(platformUUID)
+	if platformUUID == "" {
+		return 0, false
+	}
+
+	for _, platform := range platforms {
+		if strings.EqualFold(strings.TrimSpace(platform.UUID), platformUUID) && platform.ID != 0 {
+			return platform.ID, true
+		}
+	}
+
+	return 0, false
 }
