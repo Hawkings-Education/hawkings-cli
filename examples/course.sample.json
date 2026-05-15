@@ -1,7 +1,9 @@
 {
   "name": "Curso de ejemplo sobre olivos",
   "remote_id": "course-olivos-cli-sample",
+  "code": "COURSE-OLIVOS-001",
   "description": "Curso de ejemplo para probar /course/bulk desde hawkings.",
+  "hours": 12,
   "language_id": 2,
   "enabled": true,
   "metadata": {

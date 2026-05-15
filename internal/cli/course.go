@@ -79,13 +79,14 @@ func newCourseListCommand(opts *rootOptions) *cobra.Command {
 			for _, item := range list.Data {
 				rows = append(rows, []string{
 					intToString(item.ID),
-					valueOrDash(stringPtrValue(item.RemoteID)),
+					stringPtrOrDash(item.Code),
 					item.Name,
 					valueOrDash(stringPtrValue(item.Status)),
+					anyValueOrDash(item.Hours),
 					valueOrDash(languageLabel(item.Language)),
 				})
 			}
-			if err := output.PrintTable([]string{"ID", "Remote ID", "Name", "Status", "Language"}, rows); err != nil {
+			if err := output.PrintTable([]string{"ID", "Code", "Name", "Status", "Hours", "Language"}, rows); err != nil {
 				return err
 			}
 
@@ -267,6 +268,8 @@ Reglas del backend relevantes:
 				{"Course ID", intToString(anyInt(result["id"]))},
 				{"Program ID", anyStringOrDash(programID)},
 				{"Name", mapString(result, "name")},
+				{"Code", anyValueOrDash(result["code"])},
+				{"Hours", anyValueOrDash(result["hours"])},
 				{"Remote ID", valueOrDash(mapString(result, "remote_id"))},
 				{"Sections", intToString(anyLen(result["course_sections"]))},
 				{"Course-level modules", intToString(anyLen(result["course_modules"]))},
@@ -318,16 +321,26 @@ func newCourseGetCommand(opts *rootOptions) *cobra.Command {
 			}
 
 			if output.WantsJSON(rt.Format) {
-				return output.PrintJSON(course)
+				return output.PrintRawJSON(rt.Client.LastRawBody())
 			}
 
 			rows := [][]string{
 				{"ID", intToString(course.ID)},
 				{"Name", course.Name},
+				{"Code", stringPtrOrDash(course.Code)},
+				{"Description", stringPtrOrDash(course.Description)},
+				{"Hours", anyValueOrDash(course.Hours)},
+				{"Hours content %", anyValueOrDash(course.HoursContentPercentage)},
+				{"Hours content", anyValueOrDash(course.HoursContent)},
+				{"Hours generated", anyValueOrDash(course.HoursGenerated)},
+				{"Words/hour", anyValueOrDash(course.WordsHour)},
+				{"Words generated", anyValueOrDash(course.WordsGenerated)},
 				{"Status", stringPtrOrDash(course.Status)},
 				{"Remote ID", stringPtrOrDash(course.RemoteID)},
 				{"Image", stringPtrOrDash(course.Image)},
 				{"Language", valueOrDash(languageLabel(course.Language))},
+				{"Research enabled", boolPtrOrDash(course.ResearchEnabled)},
+				{"Research instructions chars", intToString(len(stringPtrValue(course.ResearchInstructions)))},
 				{"Sections", intToString(len(course.CourseSections))},
 				{"Modules", intToString(courseAllModuleCount(course))},
 				{"Course-level modules", intToString(len(course.CourseModules))},
@@ -526,6 +539,9 @@ func newCourseModuleStatusCommand(opts *rootOptions) *cobra.Command {
 func validateCourseBulkPayload(payload map[string]any) error {
 	if payload == nil {
 		return fmt.Errorf("course payload is required")
+	}
+	if err := validateNoMovedMetadataFields("course create", payload, courseMigratedMetadataFields); err != nil {
+		return err
 	}
 
 	sections, ok := payload["course_sections"]

@@ -55,7 +55,7 @@ func newModuleGetCommand(opts *rootOptions) *cobra.Command {
 			}
 
 			if output.WantsJSON(rt.Format) {
-				return output.PrintJSON(module)
+				return output.PrintRawJSON(rt.Client.LastRawBody())
 			}
 
 			rows := [][]string{
@@ -65,6 +65,8 @@ func newModuleGetCommand(opts *rootOptions) *cobra.Command {
 				{"Status", stringPtrOrDash(module.Status)},
 				{"Order", intToString(module.Order)},
 				{"Approved At", stringPtrOrDash(module.ApprovedAt)},
+				{"Research enabled", boolPtrOrDash(module.ResearchEnabled)},
+				{"Research instructions chars", intToString(len(stringPtrValue(module.ResearchInstructions)))},
 				{"Contents", intToString(len(module.CourseContents))},
 			}
 			if module.Activity != nil {

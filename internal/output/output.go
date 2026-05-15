@@ -1,6 +1,7 @@
 package output
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -44,6 +45,31 @@ func PrintJSON(v any) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
+}
+
+// PrintRawJSON reemite el body JSON original de la API, reindentado para
+// legibilidad. Si raw no es JSON valido cae al body bruto. Devuelve el
+// objeto tal cual llega de la API, sin filtrar por las structs del CLI.
+func PrintRawJSON(raw []byte) error {
+	if len(raw) == 0 {
+		_, err := os.Stdout.Write([]byte("null\n"))
+		return err
+	}
+	var pretty bytes.Buffer
+	if err := json.Indent(&pretty, raw, "", "  "); err != nil {
+		if _, werr := os.Stdout.Write(raw); werr != nil {
+			return werr
+		}
+		if len(raw) == 0 || raw[len(raw)-1] != '\n' {
+			_, _ = os.Stdout.Write([]byte("\n"))
+		}
+		return nil
+	}
+	if _, err := os.Stdout.Write(pretty.Bytes()); err != nil {
+		return err
+	}
+	_, err := os.Stdout.Write([]byte("\n"))
+	return err
 }
 
 func PrintTable(headers []string, rows [][]string) error {

@@ -24,6 +24,15 @@ type Client struct {
 	baseURL string
 	xAPIKey string
 	client  *http.Client
+	lastRaw json.RawMessage
+}
+
+// LastRawBody devuelve el body JSON de la última respuesta exitosa
+// procesada por getJSON, sendJSON o sendMultipart. Permite reemitir
+// la respuesta original sin perder campos no modelados en las structs.
+// No es thread-safe: el CLI ejecuta los comandos de forma síncrona.
+func (c *Client) LastRawBody() json.RawMessage {
+	return c.lastRaw
 }
 
 type APIError struct {
@@ -101,34 +110,46 @@ type Activity struct {
 }
 
 type CourseModule struct {
-	ID             int             `json:"id"`
-	Name           string          `json:"name"`
-	Type           string          `json:"type"`
-	URL            string          `json:"url"`
-	Order          int             `json:"order"`
-	RemoteID       *string         `json:"remote_id"`
-	Metadata       map[string]any  `json:"metadata"`
-	Status         *string         `json:"status"`
-	Enabled        bool            `json:"enabled"`
-	ApprovedAt     *string         `json:"approved_at"`
-	CourseContents []CourseContent `json:"course_contents"`
-	Activity       *Activity       `json:"activity"`
+	ID                   int             `json:"id"`
+	Name                 string          `json:"name"`
+	Type                 string          `json:"type"`
+	URL                  string          `json:"url"`
+	Order                int             `json:"order"`
+	RemoteID             *string         `json:"remote_id"`
+	Metadata             map[string]any  `json:"metadata"`
+	Status               *string         `json:"status"`
+	Enabled              bool            `json:"enabled"`
+	ApprovedAt           *string         `json:"approved_at"`
+	ResearchEnabled      *bool           `json:"research_enabled"`
+	ResearchInstructions *string         `json:"research_instructions"`
+	CourseContents       []CourseContent `json:"course_contents"`
+	Activity             *Activity       `json:"activity"`
 }
 
 type CourseSection struct {
-	ID            int            `json:"id"`
-	Name          string         `json:"name"`
-	Order         int            `json:"order"`
-	RemoteID      *string        `json:"remote_id"`
-	Metadata      map[string]any `json:"metadata"`
-	Enabled       bool           `json:"enabled"`
-	Course        map[string]any `json:"course"`
-	CourseModules []CourseModule `json:"course_modules"`
+	ID                   int            `json:"id"`
+	Name                 string         `json:"name"`
+	Order                int            `json:"order"`
+	RemoteID             *string        `json:"remote_id"`
+	Metadata             map[string]any `json:"metadata"`
+	Enabled              bool           `json:"enabled"`
+	ResearchEnabled      *bool          `json:"research_enabled"`
+	ResearchInstructions *string        `json:"research_instructions"`
+	Course               map[string]any `json:"course"`
+	CourseModules        []CourseModule `json:"course_modules"`
 }
 
 type CourseDetail struct {
 	ID                       int             `json:"id"`
 	Name                     string          `json:"name"`
+	Code                     *string         `json:"code"`
+	Description              *string         `json:"description"`
+	Hours                    any             `json:"hours"`
+	HoursContentPercentage   any             `json:"hours_content_percentage"`
+	HoursContent             any             `json:"hours_content"`
+	HoursGenerated           any             `json:"hours_generated"`
+	WordsHour                any             `json:"words_hour"`
+	WordsGenerated           any             `json:"words_generated"`
 	AIBehaviour              *string         `json:"ai_behaviour"`
 	GradePublishDelay        any             `json:"grade_publish_delay"`
 	Status                   *string         `json:"status"`
@@ -141,6 +162,8 @@ type CourseDetail struct {
 	CourseContentProcessedAt *string         `json:"course_content_processed_at"`
 	PromptEvaluatorModel     *string         `json:"prompt_evaluator_model"`
 	AssignmentsCount         any             `json:"assignments_count"`
+	ResearchEnabled          *bool           `json:"research_enabled"`
+	ResearchInstructions     *string         `json:"research_instructions"`
 	CourseModules            []CourseModule  `json:"course_modules"`
 	CourseSections           []CourseSection `json:"course_sections"`
 	Language                 *Language       `json:"language"`
@@ -149,6 +172,14 @@ type CourseDetail struct {
 type ProgramSummary struct {
 	ID                       int              `json:"id"`
 	Name                     string           `json:"name"`
+	Code                     *string          `json:"code"`
+	Description              *string          `json:"description"`
+	Hours                    any              `json:"hours"`
+	HoursContentPercentage   any              `json:"hours_content_percentage"`
+	HoursContent             any              `json:"hours_content"`
+	HoursGenerated           any              `json:"hours_generated"`
+	WordsHour                any              `json:"words_hour"`
+	WordsGenerated           any              `json:"words_generated"`
 	RemoteID                 *string          `json:"remote_id"`
 	Enabled                  bool             `json:"enabled"`
 	Status                   *string          `json:"status"`
@@ -169,6 +200,14 @@ type ProgramSummary struct {
 type ProgramDetail struct {
 	ID                       int              `json:"id"`
 	Name                     string           `json:"name"`
+	Code                     *string          `json:"code"`
+	Description              *string          `json:"description"`
+	Hours                    any              `json:"hours"`
+	HoursContentPercentage   any              `json:"hours_content_percentage"`
+	HoursContent             any              `json:"hours_content"`
+	HoursGenerated           any              `json:"hours_generated"`
+	WordsHour                any              `json:"words_hour"`
+	WordsGenerated           any              `json:"words_generated"`
 	Image                    *string          `json:"image"`
 	Syllabus                 any              `json:"syllabus"`
 	SyllabusPrompt           *string          `json:"syllabus_prompt"`
@@ -202,15 +241,23 @@ type ProgramList struct {
 }
 
 type CourseSummary struct {
-	ID        int            `json:"id"`
-	Name      string         `json:"name"`
-	Status    *string        `json:"status"`
-	RemoteID  *string        `json:"remote_id"`
-	Image     *string        `json:"image"`
-	Enabled   bool           `json:"enabled"`
-	CreatedAt string         `json:"created_at"`
-	Metadata  map[string]any `json:"metadata"`
-	Language  *Language      `json:"language"`
+	ID                     int            `json:"id"`
+	Name                   string         `json:"name"`
+	Code                   *string        `json:"code"`
+	Description            *string        `json:"description"`
+	Hours                  any            `json:"hours"`
+	HoursContentPercentage any            `json:"hours_content_percentage"`
+	HoursContent           any            `json:"hours_content"`
+	HoursGenerated         any            `json:"hours_generated"`
+	WordsHour              any            `json:"words_hour"`
+	WordsGenerated         any            `json:"words_generated"`
+	Status                 *string        `json:"status"`
+	RemoteID               *string        `json:"remote_id"`
+	Image                  *string        `json:"image"`
+	Enabled                bool           `json:"enabled"`
+	CreatedAt              string         `json:"created_at"`
+	Metadata               map[string]any `json:"metadata"`
+	Language               *Language      `json:"language"`
 }
 
 type CourseList struct {
@@ -225,6 +272,23 @@ type CourseAreaSummary struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
 	Code string `json:"code"`
+}
+
+type CourseArea struct {
+	ID          int          `json:"id"`
+	Name        string       `json:"name"`
+	Description *string      `json:"description"`
+	Code        string       `json:"code"`
+	Enabled     bool         `json:"enabled"`
+	User        *UserSummary `json:"user"`
+}
+
+type CourseAreaList struct {
+	Data   []CourseArea `json:"data"`
+	Pages  int          `json:"pages"`
+	Page   int          `json:"page"`
+	Offset int          `json:"offset"`
+	Total  int          `json:"total"`
 }
 
 type CourseFaculty struct {
@@ -359,6 +423,33 @@ func (c *Client) ListCourseFaculties(ctx context.Context, params url.Values, wit
 	return list, nil
 }
 
+func (c *Client) GetCourseFaculty(ctx context.Context, id string, with []string) (CourseFaculty, error) {
+	var faculty CourseFaculty
+	params := withValues(nil, with)
+	if err := c.getJSON(ctx, "/course-faculty/"+id, params, &faculty); err != nil {
+		return CourseFaculty{}, err
+	}
+	return faculty, nil
+}
+
+func (c *Client) ListCourseAreas(ctx context.Context, params url.Values, with []string) (CourseAreaList, error) {
+	var list CourseAreaList
+	params = withValues(params, with)
+	if err := c.getJSON(ctx, "/course-area", params, &list); err != nil {
+		return CourseAreaList{}, err
+	}
+	return list, nil
+}
+
+func (c *Client) GetCourseArea(ctx context.Context, id string, with []string) (CourseArea, error) {
+	var area CourseArea
+	params := withValues(nil, with)
+	if err := c.getJSON(ctx, "/course-area/"+id, params, &area); err != nil {
+		return CourseArea{}, err
+	}
+	return area, nil
+}
+
 func (c *Client) ListProgramTemplates(ctx context.Context) ([]CourseProgramTemplate, error) {
 	var templates []CourseProgramTemplate
 	if err := c.getJSON(ctx, "/course-program-template", nil, &templates); err != nil {
@@ -486,9 +577,8 @@ func (c *Client) UploadCourseImage(ctx context.Context, id string, fields map[st
 	return course, nil
 }
 
-func (c *Client) GenerateCourseImage(ctx context.Context, id string, force bool) (CourseDetail, error) {
+func (c *Client) GenerateCourseImage(ctx context.Context, id string, payload map[string]any) (CourseDetail, error) {
 	var course CourseDetail
-	payload := map[string]any{"force": force}
 	if err := c.sendJSON(ctx, http.MethodPost, "/course/"+id+"/image/generate", nil, payload, &course); err != nil {
 		return CourseDetail{}, err
 	}
@@ -615,9 +705,8 @@ func (c *Client) UploadProgramImage(ctx context.Context, id string, fields map[s
 	return program, nil
 }
 
-func (c *Client) GenerateProgramImage(ctx context.Context, id string, force bool) (ProgramDetail, error) {
+func (c *Client) GenerateProgramImage(ctx context.Context, id string, payload map[string]any) (ProgramDetail, error) {
 	var program ProgramDetail
-	payload := map[string]any{"force": force}
 	if err := c.sendJSON(ctx, http.MethodPost, "/course-program/"+id+"/image/generate", nil, payload, &program); err != nil {
 		return ProgramDetail{}, err
 	}
@@ -828,12 +917,17 @@ func (c *Client) sendMultipart(ctx context.Context, method, endpoint string, fie
 		}
 	}
 
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	if err != nil {
+		return fmt.Errorf("read multipart response: %w", err)
+	}
+	c.lastRaw = append(c.lastRaw[:0], data...)
+
 	if out == nil {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBytes))
 		return nil
 	}
 
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(out); err != nil {
+	if err := json.Unmarshal(data, out); err != nil {
 		return fmt.Errorf("decode multipart response: %w", err)
 	}
 	return nil
@@ -915,12 +1009,17 @@ func (c *Client) sendJSON(ctx context.Context, method, endpoint string, params u
 		}
 	}
 
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	c.lastRaw = append(c.lastRaw[:0], data...)
+
 	if out == nil {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBytes))
 		return nil
 	}
 
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(out); err != nil {
+	if err := json.Unmarshal(data, out); err != nil {
 		return fmt.Errorf("decode response: %w", err)
 	}
 	return nil

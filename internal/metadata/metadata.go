@@ -140,6 +140,18 @@ func EntitiesCatalog() []Entity {
 			},
 		},
 		{
+			Name:     "area",
+			Summary:  "Dato de referencia para agrupar facultades por course_area_id.",
+			Endpoint: "/course-area/{id}",
+			KeyFields: []string{
+				"id", "name", "code", "enabled",
+			},
+			Commands: []string{
+				"area list",
+				"area get",
+			},
+		},
+		{
 			Name:     "faculty",
 			Summary:  "Dato de referencia para descubrir course_faculty_id en la platform activa.",
 			Endpoint: "/course-faculty/{id}",
@@ -151,6 +163,7 @@ func EntitiesCatalog() []Entity {
 			},
 			Commands: []string{
 				"faculty list",
+				"faculty get",
 			},
 		},
 		{
@@ -205,7 +218,9 @@ func EntitiesCatalog() []Entity {
 			Endpoint: "/course-program/{id}",
 			Children: []string{"course"},
 			KeyFields: []string{
-				"id", "name", "status", "enabled", "metadata", "language", "syllabus", "courses_count",
+				"id", "name", "code", "description", "hours", "hours_content_percentage", "hours_content",
+				"hours_generated", "words_hour", "words_generated", "status", "enabled", "metadata",
+				"language", "syllabus", "courses_count",
 			},
 			Expanders: []string{
 				"courseProgramTemplate",
@@ -253,7 +268,9 @@ func EntitiesCatalog() []Entity {
 			Parent:   "program",
 			Children: []string{"section", "module"},
 			KeyFields: []string{
-				"id", "name", "status", "language", "course_sections", "course_modules",
+				"id", "name", "code", "hours", "hours_content_percentage", "hours_content",
+				"hours_generated", "words_hour", "words_generated", "status", "language",
+				"course_sections", "course_modules",
 			},
 			Expanders: []string{
 				"courseModules",
@@ -426,6 +443,32 @@ func CommandsCatalog() []Command {
 			Output:       "json|table",
 		},
 		{
+			Path:         "area list",
+			Summary:      "Lista areas accesibles para descubrir course_area_id.",
+			Method:       "GET",
+			Endpoint:     "/course-area",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--limit", Type: "int", Description: "Limite por pagina."},
+				{Name: "--page", Type: "int", Description: "Pagina a solicitar."},
+				{Name: "--all", Type: "bool", Description: "Recorre todas las paginas y devuelve todos los resultados."},
+				{Name: "--search", Type: "string", Description: "Texto de busqueda."},
+				{Name: "--with", Type: "stringArray", Description: "Relaciones extra via with[]."},
+			},
+		},
+		{
+			Path:         "area get",
+			Summary:      "Muestra el detalle de un area.",
+			Method:       "GET",
+			Endpoint:     "/course-area/{id}",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
+				{Name: "--with", Type: "stringArray", Description: "Relaciones extra via with[]."},
+			},
+		},
+		{
 			Path:         "faculty list",
 			Summary:      "Lista facultades accesibles para descubrir course_faculty_id.",
 			Method:       "GET",
@@ -437,6 +480,17 @@ func CommandsCatalog() []Command {
 				{Name: "--page", Type: "int", Description: "Pagina a solicitar."},
 				{Name: "--all", Type: "bool", Description: "Recorre todas las paginas y devuelve todos los resultados."},
 				{Name: "--search", Type: "string", Description: "Texto de busqueda."},
+				{Name: "--with", Type: "stringArray", Description: "Relaciones extra via with[]."},
+			},
+		},
+		{
+			Path:         "faculty get",
+			Summary:      "Muestra el detalle de una facultad.",
+			Method:       "GET",
+			Endpoint:     "/course-faculty/{id}",
+			RequiresAuth: true,
+			Output:       "json|table",
+			Flags: []Flag{
 				{Name: "--with", Type: "stringArray", Description: "Relaciones extra via with[]."},
 			},
 		},
@@ -581,6 +635,7 @@ func CommandsCatalog() []Command {
 			},
 			Notes: []string{
 				"Pensado para seguir el flujo POST /course-program y luego POST /course-program/{id}/space.",
+				"Campos como code, description, hours, hours_content_percentage, hours_content, hours_generated, words_hour y words_generated son directos del program, no de metadata.",
 			},
 		},
 		{
@@ -597,6 +652,7 @@ func CommandsCatalog() []Command {
 			},
 			Notes: []string{
 				"El backend preserva el estado actual del program y de metadata; el cliente no hace GET previo ni merge local.",
+				"Usa campos directos para code, description, hours, hours_content_percentage, hours_content, hours_generated, words_hour y words_generated; el CLI rechaza esos campos dentro de metadata.",
 			},
 		},
 		{
@@ -727,10 +783,13 @@ func CommandsCatalog() []Command {
 			Output:       "json|table",
 			Flags: []Flag{
 				{Name: "--force", Type: "bool", Description: "Regenera aunque el program ya tenga imagen."},
+				{Name: "--async", Type: "bool", Description: "Encola la generacion en background; por defecto espera sincronamente."},
+				{Name: "--queue", Type: "string", Description: "Cola opcional para la generacion: ultra, high o low."},
 				{Name: "--dry-run", Type: "bool", Description: "Muestra la operacion sin enviar peticiones."},
 			},
 			Notes: []string{
 				"Esta opcion pide al backend generar la portada con IA; no sube ningun archivo local.",
+				"Por defecto el comando espera la respuesta sincrona; use --async para pedir async=true.",
 			},
 		},
 		{
@@ -885,10 +944,13 @@ func CommandsCatalog() []Command {
 			Output:       "json|table",
 			Flags: []Flag{
 				{Name: "--force", Type: "bool", Description: "Regenera aunque el course ya tenga imagen."},
+				{Name: "--async", Type: "bool", Description: "Encola la generacion en background; por defecto espera sincronamente."},
+				{Name: "--queue", Type: "string", Description: "Cola opcional para la generacion: ultra, high o low."},
 				{Name: "--dry-run", Type: "bool", Description: "Muestra la operacion sin enviar peticiones."},
 			},
 			Notes: []string{
 				"Esta opcion pide al backend generar la portada con IA; no sube ningun archivo local.",
+				"Por defecto el comando espera la respuesta sincrona; use --async para pedir async=true.",
 			},
 		},
 		{

@@ -123,6 +123,7 @@ hawkings program list --output json
 hawkings program list --all --output json
 hawkings course list --all --search "internet seguro"
 hawkings space list --all
+hawkings area list --all
 hawkings faculty list --all
 ```
 
@@ -199,6 +200,8 @@ Gestionar la portada de un programa:
 # Generar portada con IA
 hawkings program image generate 410
 hawkings program image generate 410 --force
+hawkings program image generate 410 --async
+hawkings program image generate 410 --async --queue high
 
 # Subir portada manual en JPG o PNG
 hawkings program image upload 410 --file ./cover.png
@@ -210,6 +213,8 @@ Gestionar la portada de un curso:
 # Generar portada con IA
 hawkings course image generate 35572
 hawkings course image generate 35572 --force
+hawkings course image generate 35572 --async
+hawkings course image generate 35572 --async --queue high
 
 # Subir portada manual en JPG o PNG.
 # Course usa PATCH /course/{id}; pasa un payload completo con los campos que quieras preservar.
@@ -250,13 +255,14 @@ hawkings describe command "course create"
 ## Notas
 
 - `program list --search` y `course list --search` hacen busqueda libre por texto.
-- `program list`, `course list`, `space list` y `faculty list` soportan `--all` para recorrer todas las paginas de forma explicita.
+- `program list`, `course list`, `space list`, `area list` y `faculty list` soportan `--all` para recorrer todas las paginas de forma explicita.
+- En `program`, los campos `code`, `description`, `hours`, `hours_content_percentage`, `hours_content`, `hours_generated`, `words_hour` y `words_generated` son directos; no los pongas dentro de `metadata`. En `course`, aplica lo mismo salvo `description`.
 - `program create-courses` llama a `/course-program/{id}/syllabus/course` y usa el syllabus ya guardado en el programa.
 - `program create-courses` puede tardar minutos. Si el cliente hace timeout, verifica primero con `program get` o `program courses` antes de reintentar.
 - `program list` acepta `--order-column` y `--order-mode`; por ejemplo `status;name` con `completed,processed,courses-created;ASC`.
 - Para reutilizar cursos existentes: `hawkings course list --all` para descubrir IDs y luego `hawkings program add-course <program-id> --course <course-id>`.
 - `course create --program` crea el curso via `/course/bulk` y luego lo relaciona con `POST /course-program/{id}/course`.
-- `program image generate` y `course image generate` piden al backend generar la portada con IA.
+- `program image generate` y `course image generate` piden al backend generar la portada con IA. Por defecto esperan la respuesta sincrona; usa `--async` para mandar `async=true` y `--queue ultra|high|low` para elegir cola.
 - `program image upload` y `course image upload` suben manualmente una portada `jpg`, `jpeg` o `png` como multipart en el campo `image`.
 - `course image upload` exige `--json` o `--json-file` porque el endpoint `PATCH /course/{id}` no es parcial para todos los campos; incluye en ese payload los campos del course que quieras conservar.
 - `scorm create` sanea el payload y no envia `user_id` ni `language_id`.

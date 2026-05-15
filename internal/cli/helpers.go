@@ -76,6 +76,20 @@ func anyStringOrDash(value any) string {
 	}
 }
 
+func anyValueOrDash(value any) string {
+	if value == nil {
+		return "-"
+	}
+	switch v := value.(type) {
+	case string:
+		return valueOrDash(v)
+	case *string:
+		return stringPtrOrDash(v)
+	default:
+		return valueOrDash(fmt.Sprintf("%v", value))
+	}
+}
+
 func stringPtrValue(value *string) string {
 	if value == nil {
 		return ""
@@ -92,6 +106,16 @@ func stringOrNil(value *string) any {
 		return nil
 	}
 	return *value
+}
+
+func boolPtrOrDash(value *bool) string {
+	if value == nil {
+		return "-"
+	}
+	if *value {
+		return "true"
+	}
+	return "false"
 }
 
 func languageLabel(language *api.Language) string {

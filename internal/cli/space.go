@@ -199,7 +199,7 @@ func newSpaceGetCommand(opts *rootOptions) *cobra.Command {
 			}
 
 			if output.WantsJSON(rt.Format) {
-				return output.PrintJSON(space)
+				return output.PrintRawJSON(rt.Client.LastRawBody())
 			}
 
 			rows := [][]string{
@@ -393,10 +393,10 @@ func newSpaceProgramsCommand(opts *rootOptions) *cobra.Command {
 			for _, item := range programs {
 				rows = append(rows, []string{
 					intToString(item.ID),
-					valueOrDash(metadataString(item.Metadata, "code")),
+					stringPtrOrDash(item.Code),
 					item.Name,
 					normalizedStatus(item.Status),
-					valueOrDash(metadataString(item.Metadata, "hours")),
+					anyValueOrDash(item.Hours),
 				})
 			}
 			return output.PrintTable([]string{"ID", "Code", "Name", "Status", "Hours"}, rows)
@@ -466,7 +466,7 @@ func newSpaceAssignProgramsCommand(opts *rootOptions) *cobra.Command {
 			for _, item := range programs {
 				rows = append(rows, []string{
 					intToString(item.ID),
-					valueOrDash(metadataString(item.Metadata, "code")),
+					stringPtrOrDash(item.Code),
 					item.Name,
 					normalizedStatus(item.Status),
 				})

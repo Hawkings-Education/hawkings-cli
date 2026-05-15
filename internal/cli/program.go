@@ -125,10 +125,10 @@ func newProgramListCommand(opts *rootOptions) *cobra.Command {
 			for _, item := range list.Data {
 				rows = append(rows, []string{
 					intToString(item.ID),
-					valueOrDash(metadataString(item.Metadata, "code")),
+					stringPtrOrDash(item.Code),
 					item.Name,
 					stringPtrOrDash(item.Status),
-					valueOrDash(metadataString(item.Metadata, "hours")),
+					anyValueOrDash(item.Hours),
 				})
 			}
 			if err := output.PrintTable([]string{"ID", "Code", "Name", "Status", "Hours"}, rows); err != nil {
@@ -204,10 +204,11 @@ func newProgramGetCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			rawBody := rt.Client.LastRawBody()
 			program = normalizeProgramDetail(program)
 
 			if output.WantsJSON(rt.Format) {
-				return output.PrintJSON(program)
+				return output.PrintRawJSON(rawBody)
 			}
 
 			rows := [][]string{
@@ -217,8 +218,14 @@ func newProgramGetCommand(opts *rootOptions) *cobra.Command {
 				{"Enabled", boolToYesNo(program.Enabled)},
 				{"Remote ID", stringPtrOrDash(program.RemoteID)},
 				{"Image", stringPtrOrDash(program.Image)},
-				{"Code", valueOrDash(metadataString(program.Metadata, "code"))},
-				{"Hours", valueOrDash(metadataString(program.Metadata, "hours"))},
+				{"Code", stringPtrOrDash(program.Code)},
+				{"Description", stringPtrOrDash(program.Description)},
+				{"Hours", anyValueOrDash(program.Hours)},
+				{"Hours content %", anyValueOrDash(program.HoursContentPercentage)},
+				{"Hours content", anyValueOrDash(program.HoursContent)},
+				{"Hours generated", anyValueOrDash(program.HoursGenerated)},
+				{"Words/hour", anyValueOrDash(program.WordsHour)},
+				{"Words generated", anyValueOrDash(program.WordsGenerated)},
 				{"Template", valueOrDash(mapString(program.CourseProgramTemplate, "name"))},
 				{"Language", valueOrDash(languageLabel(program.Language))},
 				{"Spaces", intToString(len(program.Spaces))},
@@ -445,6 +452,14 @@ func newProgramConfigCommand(opts *rootOptions) *cobra.Command {
 				"status":                      stringPtrValue(program.Status),
 				"remote_id":                   stringPtrValue(program.RemoteID),
 				"enabled":                     program.Enabled,
+				"code":                        stringPtrValue(program.Code),
+				"description":                 stringPtrValue(program.Description),
+				"hours":                       program.Hours,
+				"hours_content_percentage":    program.HoursContentPercentage,
+				"hours_content":               program.HoursContent,
+				"hours_generated":             program.HoursGenerated,
+				"words_hour":                  program.WordsHour,
+				"words_generated":             program.WordsGenerated,
 				"metadata":                    program.Metadata,
 				"template":                    program.CourseProgramTemplate,
 				"language":                    program.Language,
@@ -469,8 +484,14 @@ func newProgramConfigCommand(opts *rootOptions) *cobra.Command {
 				{"Language", valueOrDash(languageLabel(program.Language))},
 				{"Faculty", valueOrDash(mapString(program.CourseFaculty, "name"))},
 				{"Spaces", valueOrDash(joinNames(program.Spaces))},
-				{"Code", valueOrDash(metadataString(program.Metadata, "code"))},
-				{"Hours", valueOrDash(metadataString(program.Metadata, "hours"))},
+				{"Code", stringPtrOrDash(program.Code)},
+				{"Description", stringPtrOrDash(program.Description)},
+				{"Hours", anyValueOrDash(program.Hours)},
+				{"Hours content %", anyValueOrDash(program.HoursContentPercentage)},
+				{"Hours content", anyValueOrDash(program.HoursContent)},
+				{"Hours generated", anyValueOrDash(program.HoursGenerated)},
+				{"Words/hour", anyValueOrDash(program.WordsHour)},
+				{"Words generated", anyValueOrDash(program.WordsGenerated)},
 				{"Context chars", intToString(len(stringPtrValue(program.Context)))},
 				{"Syllabus prompt chars", intToString(len(stringPtrValue(program.SyllabusPrompt)))},
 				{"Module prompt chars", intToString(len(stringPtrValue(program.CourseModulePromptCustom)))},
@@ -683,19 +704,27 @@ func newProgramStatusMatrixCommand(opts *rootOptions) *cobra.Command {
 
 func programSummaryFromDetail(program api.ProgramDetail) api.ProgramSummary {
 	return api.ProgramSummary{
-		ID:           program.ID,
-		Name:         program.Name,
-		RemoteID:     program.RemoteID,
-		Enabled:      program.Enabled,
-		Status:       program.Status,
-		Syllabus:     program.Syllabus,
-		CreatedAt:    program.CreatedAt,
-		UpdatedAt:    program.UpdatedAt,
-		Metadata:     cloneMap(program.Metadata),
-		CoursesCount: program.CoursesCount,
-		Language:     program.Language,
-		User:         program.User,
-		Spaces:       cloneMaps(program.Spaces),
+		ID:                     program.ID,
+		Name:                   program.Name,
+		Code:                   program.Code,
+		Description:            program.Description,
+		Hours:                  program.Hours,
+		HoursContentPercentage: program.HoursContentPercentage,
+		HoursContent:           program.HoursContent,
+		HoursGenerated:         program.HoursGenerated,
+		WordsHour:              program.WordsHour,
+		WordsGenerated:         program.WordsGenerated,
+		RemoteID:               program.RemoteID,
+		Enabled:                program.Enabled,
+		Status:                 program.Status,
+		Syllabus:               program.Syllabus,
+		CreatedAt:              program.CreatedAt,
+		UpdatedAt:              program.UpdatedAt,
+		Metadata:               cloneMap(program.Metadata),
+		CoursesCount:           program.CoursesCount,
+		Language:               program.Language,
+		User:                   program.User,
+		Spaces:                 cloneMaps(program.Spaces),
 	}
 }
 
@@ -712,7 +741,7 @@ func filterProgramSummaries(programs []api.ProgramSummary, search, status string
 			haystack := strings.ToLower(strings.Join([]string{
 				item.Name,
 				stringPtrValue(item.RemoteID),
-				metadataString(item.Metadata, "code"),
+				stringPtrValue(item.Code),
 			}, " "))
 			if !strings.Contains(haystack, search) {
 				continue

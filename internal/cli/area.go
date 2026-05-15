@@ -10,19 +10,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var defaultFacultyWith = []string{"courseArea"}
-
-func newFacultyCommand(opts *rootOptions) *cobra.Command {
+func newAreaCommand(opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "faculty",
-		Short: "Comandos sobre facultades de referencia",
+		Use:   "area",
+		Short: "Comandos sobre areas de referencia",
 	}
-	cmd.AddCommand(newFacultyListCommand(opts))
-	cmd.AddCommand(newFacultyGetCommand(opts))
+	cmd.AddCommand(newAreaListCommand(opts))
+	cmd.AddCommand(newAreaGetCommand(opts))
 	return cmd
 }
 
-func newFacultyListCommand(opts *rootOptions) *cobra.Command {
+func newAreaListCommand(opts *rootOptions) *cobra.Command {
 	var limit int
 	var page int
 	var search string
@@ -31,7 +29,7 @@ func newFacultyListCommand(opts *rootOptions) *cobra.Command {
 
 	command := &cobra.Command{
 		Use:   "list",
-		Short: "Lista las facultades accesibles para la platform activa",
+		Short: "Lista las areas accesibles para la platform activa",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rt, err := buildRuntime(opts, true)
 			if err != nil {
@@ -53,7 +51,7 @@ func newFacultyListCommand(opts *rootOptions) *cobra.Command {
 				targetLimit = 0
 			}
 
-			list, err := listAllCourseFaculties(ctx, rt.Client, params, uniqueStrings(append(defaultFacultyWith, with...)), targetPage, targetLimit)
+			list, err := listAllCourseAreas(ctx, rt.Client, params, with, targetPage, targetLimit)
 			if err != nil {
 				return err
 			}
@@ -68,11 +66,10 @@ func newFacultyListCommand(opts *rootOptions) *cobra.Command {
 					intToString(item.ID),
 					valueOrDash(item.Code),
 					item.Name,
-					valueOrDash(courseAreaLabel(item.CourseArea)),
 					boolToYesNo(item.Enabled),
 				})
 			}
-			if err := output.PrintTable([]string{"ID", "Code", "Name", "Area", "Enabled"}, rows); err != nil {
+			if err := output.PrintTable([]string{"ID", "Code", "Name", "Enabled"}, rows); err != nil {
 				return err
 			}
 
@@ -94,12 +91,12 @@ func newFacultyListCommand(opts *rootOptions) *cobra.Command {
 	return command
 }
 
-func newFacultyGetCommand(opts *rootOptions) *cobra.Command {
+func newAreaGetCommand(opts *rootOptions) *cobra.Command {
 	var with []string
 
 	command := &cobra.Command{
-		Use:   "get <faculty-id>",
-		Short: "Muestra el detalle de una facultad",
+		Use:   "get <area-id>",
+		Short: "Muestra el detalle de un area",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rt, err := buildRuntime(opts, true)
@@ -110,7 +107,7 @@ func newFacultyGetCommand(opts *rootOptions) *cobra.Command {
 			ctx, cancel := commandContext(rt)
 			defer cancel()
 
-			faculty, err := rt.Client.GetCourseFaculty(ctx, args[0], uniqueStrings(append(defaultFacultyWith, with...)))
+			area, err := rt.Client.GetCourseArea(ctx, args[0], with)
 			if err != nil {
 				return err
 			}
@@ -120,12 +117,11 @@ func newFacultyGetCommand(opts *rootOptions) *cobra.Command {
 			}
 
 			rows := [][]string{
-				{"ID", intToString(faculty.ID)},
-				{"Code", valueOrDash(faculty.Code)},
-				{"Name", faculty.Name},
-				{"Description", stringPtrOrDash(faculty.Description)},
-				{"Area", valueOrDash(courseAreaLabel(faculty.CourseArea))},
-				{"Enabled", boolToYesNo(faculty.Enabled)},
+				{"ID", intToString(area.ID)},
+				{"Code", valueOrDash(area.Code)},
+				{"Name", area.Name},
+				{"Description", stringPtrOrDash(area.Description)},
+				{"Enabled", boolToYesNo(area.Enabled)},
 			}
 			return output.PrintTable([]string{"Field", "Value"}, rows)
 		},
@@ -136,28 +132,28 @@ func newFacultyGetCommand(opts *rootOptions) *cobra.Command {
 	return command
 }
 
-func listAllCourseFaculties(ctx context.Context, client *api.Client, params url.Values, with []string, page, limit int) (api.CourseFacultyList, error) {
-	firstPage, err := client.ListCourseFaculties(ctx, params, with)
+func listAllCourseAreas(ctx context.Context, client *api.Client, params url.Values, with []string, page, limit int) (api.CourseAreaList, error) {
+	firstPage, err := client.ListCourseAreas(ctx, params, with)
 	if err != nil {
-		return api.CourseFacultyList{}, err
+		return api.CourseAreaList{}, err
 	}
 
-	items := append([]api.CourseFaculty{}, firstPage.Data...)
+	items := append([]api.CourseArea{}, firstPage.Data...)
 	for nextPage := 2; nextPage <= firstPage.Pages; nextPage++ {
 		pageParams := cloneURLValues(params)
 		pageParams.Set("page", intToString(nextPage))
 
-		next, err := client.ListCourseFaculties(ctx, pageParams, with)
+		next, err := client.ListCourseAreas(ctx, pageParams, with)
 		if err != nil {
-			return api.CourseFacultyList{}, err
+			return api.CourseAreaList{}, err
 		}
 		items = append(items, next.Data...)
 	}
 
-	return paginateCourseFaculties(items, page, limit), nil
+	return paginateCourseAreas(items, page, limit), nil
 }
 
-func paginateCourseFaculties(items []api.CourseFaculty, page, limit int) api.CourseFacultyList {
+func paginateCourseAreas(items []api.CourseArea, page, limit int) api.CourseAreaList {
 	if limit <= 0 {
 		limit = len(items)
 		if limit == 0 {
@@ -186,22 +182,11 @@ func paginateCourseFaculties(items []api.CourseFaculty, page, limit int) api.Cou
 		end = total
 	}
 
-	return api.CourseFacultyList{
+	return api.CourseAreaList{
 		Data:   items[start:end],
 		Pages:  pages,
 		Page:   page,
 		Offset: start,
 		Total:  total,
 	}
-}
-
-func cloneURLValues(values url.Values) url.Values {
-	if values == nil {
-		return url.Values{}
-	}
-	out := url.Values{}
-	for key, value := range values {
-		out[key] = append([]string{}, value...)
-	}
-	return out
 }

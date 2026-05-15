@@ -16,6 +16,14 @@ import (
 var programCreatePayloadFields = []string{
 	"remote_id",
 	"name",
+	"code",
+	"description",
+	"hours",
+	"hours_content_percentage",
+	"hours_content",
+	"hours_generated",
+	"words_hour",
+	"words_generated",
 	"status",
 	"metadata",
 	"syllabus",
@@ -36,6 +44,14 @@ var programCreatePayloadFields = []string{
 var programUpdateOnlyPayloadFields = []string{
 	"remote_id",
 	"name",
+	"code",
+	"description",
+	"hours",
+	"hours_content_percentage",
+	"hours_content",
+	"hours_generated",
+	"words_hour",
+	"words_generated",
 	"status",
 	"metadata",
 	"syllabus",
@@ -52,6 +68,27 @@ var programGenerateSyllabusPayloadFields = []string{
 	"context",
 	"syllabus_prompt",
 	"force",
+}
+
+var programMigratedMetadataFields = []string{
+	"code",
+	"description",
+	"hours",
+	"hours_content_percentage",
+	"hours_content",
+	"hours_generated",
+	"words_hour",
+	"words_generated",
+}
+
+var courseMigratedMetadataFields = []string{
+	"code",
+	"hours",
+	"hours_content_percentage",
+	"hours_content",
+	"hours_generated",
+	"words_hour",
+	"words_generated",
 }
 
 func newProgramCreateCommand(opts *rootOptions) *cobra.Command {
@@ -74,6 +111,9 @@ func newProgramCreateCommand(opts *rootOptions) *cobra.Command {
 				return err
 			}
 			if err := validatePayloadFields("program create", payload, programCreatePayloadFields); err != nil {
+				return err
+			}
+			if err := validateNoMovedMetadataFields("program create", payload, programMigratedMetadataFields); err != nil {
 				return err
 			}
 			if syllabusFile != "" {
@@ -127,6 +167,8 @@ func newProgramCreateCommand(opts *rootOptions) *cobra.Command {
 			rows := [][]string{
 				{"ID", intToString(program.ID)},
 				{"Name", program.Name},
+				{"Code", stringPtrOrDash(program.Code)},
+				{"Hours", anyValueOrDash(program.Hours)},
 				{"Status", normalizedStatus(program.Status)},
 				{"Language", valueOrDash(languageLabel(program.Language))},
 				{"Courses count", intToString(anyInt(program.CoursesCount))},
@@ -171,6 +213,9 @@ func newProgramUpdateCommand(opts *rootOptions) *cobra.Command {
 			if err := validatePayloadFields("program update", patch, programUpdateOnlyPayloadFields); err != nil {
 				return err
 			}
+			if err := validateNoMovedMetadataFields("program update", patch, programMigratedMetadataFields); err != nil {
+				return err
+			}
 
 			if dryRun {
 				return output.PrintJSON(map[string]any{
@@ -200,6 +245,8 @@ func newProgramUpdateCommand(opts *rootOptions) *cobra.Command {
 			rows := [][]string{
 				{"ID", intToString(updated.ID)},
 				{"Name", updated.Name},
+				{"Code", stringPtrOrDash(updated.Code)},
+				{"Hours", anyValueOrDash(updated.Hours)},
 				{"Status", normalizedStatus(updated.Status)},
 				{"Syllabus", boolToAvailability(programHasSyllabus(updated))},
 				{"Courses", boolToAvailability(programHasCourses(updated))},
@@ -562,13 +609,13 @@ func printProgramCoursesMutationResult(format output.Format, courses []api.Cours
 	for _, course := range courses {
 		rows = append(rows, []string{
 			intToString(course.ID),
-			valueOrDash(stringPtrValue(course.RemoteID)),
+			stringPtrOrDash(course.Code),
 			course.Name,
 			valueOrDash(stringPtrValue(course.Status)),
 		})
 	}
 
-	return output.PrintTable([]string{"ID", "Remote ID", "Name", "Status"}, rows)
+	return output.PrintTable([]string{"ID", "Code", "Name", "Status"}, rows)
 }
 
 func validatePayloadFields(commandName string, payload map[string]any, allowedFields []string) error {
@@ -596,6 +643,39 @@ func validatePayloadFields(commandName string, payload map[string]any, allowedFi
 		commandName,
 		strings.Join(unknown, ", "),
 		strings.Join(allowedSorted, ", "),
+	)
+}
+
+func validateNoMovedMetadataFields(commandName string, payload map[string]any, movedFields []string) error {
+	metadata, ok := payload["metadata"]
+	if !ok || metadata == nil {
+		return nil
+	}
+	metadataMap, ok := metadata.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	moved := make(map[string]struct{}, len(movedFields))
+	for _, field := range movedFields {
+		moved[field] = struct{}{}
+	}
+
+	found := make([]string, 0)
+	for field := range metadataMap {
+		if _, ok := moved[field]; ok {
+			found = append(found, field)
+		}
+	}
+	if len(found) == 0 {
+		return nil
+	}
+
+	sort.Strings(found)
+	return fmt.Errorf(
+		"%s JSON payload contains migrated field(s) under metadata: %s; send them as top-level fields",
+		commandName,
+		strings.Join(found, ", "),
 	)
 }
 
@@ -853,13 +933,13 @@ func printProgramCoursesReorderResult(courses []api.CourseDetail, reorder progra
 		rows = append(rows, []string{
 			intToString(reorder.Order[courseID]),
 			intToString(courseID),
-			valueOrDash(stringPtrValue(course.RemoteID)),
+			stringPtrOrDash(course.Code),
 			valueOrDash(course.Name),
 			valueOrDash(stringPtrValue(course.Status)),
 		})
 	}
 
-	return output.PrintTable([]string{"Order", "ID", "Remote ID", "Name", "Status"}, rows)
+	return output.PrintTable([]string{"Order", "ID", "Code", "Name", "Status"}, rows)
 }
 
 func newProgramGenerateSyllabusCommand(opts *rootOptions) *cobra.Command {

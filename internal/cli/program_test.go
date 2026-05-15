@@ -93,6 +93,8 @@ func TestValidatePayloadFieldsAllowsResearchInstructions(t *testing.T) {
 	payload := map[string]any{
 		"name":                  "Program",
 		"language_id":           json.Number("1"),
+		"code":                  "PROG-001",
+		"hours":                 json.Number("80"),
 		"research_instructions": "Use current sources.",
 	}
 
@@ -110,6 +112,34 @@ func TestValidatePayloadFieldsRejectsUnknownField(t *testing.T) {
 
 	if err := validatePayloadFields("program create", payload, programCreatePayloadFields); err == nil {
 		t.Fatal("expected unsupported field to fail")
+	}
+}
+
+func TestValidateNoMovedMetadataFieldsRejectsProgramLegacyMetadata(t *testing.T) {
+	payload := map[string]any{
+		"name": "Program",
+		"metadata": map[string]any{
+			"code":  "PROG-001",
+			"hours": json.Number("80"),
+		},
+	}
+
+	if err := validateNoMovedMetadataFields("program create", payload, programMigratedMetadataFields); err == nil {
+		t.Fatal("expected migrated metadata fields to fail")
+	}
+}
+
+func TestValidateCourseBulkPayloadRejectsLegacyMetadata(t *testing.T) {
+	payload := map[string]any{
+		"name":            "Course",
+		"course_sections": []any{},
+		"metadata": map[string]any{
+			"code": "COURSE-001",
+		},
+	}
+
+	if err := validateCourseBulkPayload(payload); err == nil {
+		t.Fatal("expected course metadata.code to fail")
 	}
 }
 

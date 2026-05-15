@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"hawkings-cli/internal/api"
 	"hawkings-cli/internal/output"
@@ -30,15 +32,21 @@ func newProgramImageCommand(opts *rootOptions) *cobra.Command {
 
 func newProgramImageGenerateCommand(opts *rootOptions) *cobra.Command {
 	var force bool
+	var async bool
+	var queue string
 	var dryRun bool
 
 	command := &cobra.Command{
 		Use:   "generate <program-id>",
 		Short: "Genera la portada de un program con IA",
-		Long:  "Genera la portada de un program via POST /course-program/{id}/image/generate. Use --force para regenerar aunque ya tenga imagen.",
+		Long:  "Genera la portada de un program via POST /course-program/{id}/image/generate. Por defecto espera la respuesta sincronamente; use --async para encolar, --queue para seleccionar cola y --force para regenerar aunque ya tenga imagen.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rt, err := buildRuntime(opts, true)
+			if err != nil {
+				return err
+			}
+			payload, err := imageGeneratePayload(force, async, queue)
 			if err != nil {
 				return err
 			}
@@ -48,14 +56,14 @@ func newProgramImageGenerateCommand(opts *rootOptions) *cobra.Command {
 					"action":     "program image generate",
 					"program_id": args[0],
 					"endpoint":   "/course-program/{id}/image/generate",
-					"payload":    map[string]any{"force": force},
+					"payload":    payload,
 				})
 			}
 
-			ctx, cancel := commandContextWithMinimum(rt, opts.timeout, imageGenerationMinTimeout)
+			ctx, cancel := imageGenerateContext(rt, opts.timeout, async)
 			defer cancel()
 
-			program, err := rt.Client.GenerateProgramImage(ctx, args[0], force)
+			program, err := rt.Client.GenerateProgramImage(ctx, args[0], payload)
 			if err != nil {
 				return err
 			}
@@ -70,6 +78,8 @@ func newProgramImageGenerateCommand(opts *rootOptions) *cobra.Command {
 	}
 
 	command.Flags().BoolVar(&force, "force", false, "Regenera la imagen aunque el program ya tenga portada")
+	command.Flags().BoolVar(&async, "async", false, "Encola la generacion en background en vez de esperar la respuesta sincrona")
+	command.Flags().StringVar(&queue, "queue", "", "Cola opcional para la generacion: ultra, high o low")
 	command.Flags().BoolVar(&dryRun, "dry-run", false, "Muestra la operacion sin enviar la peticion")
 	return command
 }
@@ -160,15 +170,21 @@ func newCourseImageCommand(opts *rootOptions) *cobra.Command {
 
 func newCourseImageGenerateCommand(opts *rootOptions) *cobra.Command {
 	var force bool
+	var async bool
+	var queue string
 	var dryRun bool
 
 	command := &cobra.Command{
 		Use:   "generate <course-id>",
 		Short: "Genera la portada de un course con IA",
-		Long:  "Genera la portada de un course via POST /course/{id}/image/generate. Use --force para regenerar aunque ya tenga imagen.",
+		Long:  "Genera la portada de un course via POST /course/{id}/image/generate. Por defecto espera la respuesta sincronamente; use --async para encolar, --queue para seleccionar cola y --force para regenerar aunque ya tenga imagen.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rt, err := buildRuntime(opts, true)
+			if err != nil {
+				return err
+			}
+			payload, err := imageGeneratePayload(force, async, queue)
 			if err != nil {
 				return err
 			}
@@ -178,14 +194,14 @@ func newCourseImageGenerateCommand(opts *rootOptions) *cobra.Command {
 					"action":    "course image generate",
 					"course_id": args[0],
 					"endpoint":  "/course/{id}/image/generate",
-					"payload":   map[string]any{"force": force},
+					"payload":   payload,
 				})
 			}
 
-			ctx, cancel := commandContextWithMinimum(rt, opts.timeout, imageGenerationMinTimeout)
+			ctx, cancel := imageGenerateContext(rt, opts.timeout, async)
 			defer cancel()
 
-			course, err := rt.Client.GenerateCourseImage(ctx, args[0], force)
+			course, err := rt.Client.GenerateCourseImage(ctx, args[0], payload)
 			if err != nil {
 				return err
 			}
@@ -199,8 +215,32 @@ func newCourseImageGenerateCommand(opts *rootOptions) *cobra.Command {
 	}
 
 	command.Flags().BoolVar(&force, "force", false, "Regenera la imagen aunque el course ya tenga portada")
+	command.Flags().BoolVar(&async, "async", false, "Encola la generacion en background en vez de esperar la respuesta sincrona")
+	command.Flags().StringVar(&queue, "queue", "", "Cola opcional para la generacion: ultra, high o low")
 	command.Flags().BoolVar(&dryRun, "dry-run", false, "Muestra la operacion sin enviar la peticion")
 	return command
+}
+
+func imageGeneratePayload(force bool, async bool, queue string) (map[string]any, error) {
+	payload := map[string]any{"force": force, "async": async}
+	queue = strings.TrimSpace(queue)
+	if queue == "" {
+		return payload, nil
+	}
+	switch queue {
+	case "ultra", "high", "low":
+		payload["queue"] = queue
+		return payload, nil
+	default:
+		return nil, fmt.Errorf("--queue must be one of: ultra, high, low")
+	}
+}
+
+func imageGenerateContext(rt *runtime, explicitOverride time.Duration, async bool) (context.Context, context.CancelFunc) {
+	if async {
+		return commandContext(rt)
+	}
+	return commandContextWithMinimum(rt, explicitOverride, imageGenerationMinTimeout)
 }
 
 func newCourseImageUploadCommand(opts *rootOptions) *cobra.Command {
@@ -310,6 +350,14 @@ func validateCourseImageUploadFields(fields map[string]any) error {
 func programImageUploadFields(program api.ProgramDetail) map[string]any {
 	fields := map[string]any{
 		"name":                        program.Name,
+		"code":                        stringOrNil(program.Code),
+		"description":                 stringOrNil(program.Description),
+		"hours":                       program.Hours,
+		"hours_content_percentage":    program.HoursContentPercentage,
+		"hours_content":               program.HoursContent,
+		"hours_generated":             program.HoursGenerated,
+		"words_hour":                  program.WordsHour,
+		"words_generated":             program.WordsGenerated,
 		"remote_id":                   stringOrNil(program.RemoteID),
 		"status":                      stringOrNil(program.Status),
 		"metadata":                    program.Metadata,
